@@ -36,15 +36,8 @@ const AppContent = () => {
       {isAuthPage ? (
         <AuthPages />
       ) : (
-        <div className="flex bg-slate-50 min-h-screen">
+        <div className="flex min-h-screen" style={{ background: "var(--surface-page)" }}>
           <Sidebar collapsed={collapsed} />
-
-          <button
-            className="md:hidden fixed top-4 left-3 z-50 bg-black text-white p-1 rounded"
-            onClick={() => setCollapsed((prev) => !prev)}
-          >
-            ☰
-          </button>
 
           <div className="flex-1 flex flex-col overflow-hidden">
             <Header
@@ -53,8 +46,8 @@ const AppContent = () => {
             />
 
             <main
-              className={`flex-1 p-4 lg:p-6 mt-16 transition-all ${
-                collapsed ? "ml-10 md:ml-20" : "ml-64"
+              className={`flex-1 p-4 lg:p-6 mt-14 transition-all duration-300 ease-out ${
+                collapsed ? "ml-16" : "ml-60"
               }`}
             >
               <AppRoutes />

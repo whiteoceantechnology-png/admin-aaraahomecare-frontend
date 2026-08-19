@@ -1,17 +1,12 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import api from "../../utils/api";
+import { fetchDashboard } from "./dashboardApi";
 
 // get dashboard
 export const getDashboard = createAsyncThunk(
   "dashboard/getDashboard",
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.get("/admin/dashboard", {
-        headers: {
-          "Content-Type": "application/json",
-        },
-        withCredentials: false,
-      });
+      const response = await fetchDashboard();
       return response.data.data;
     } catch (error) {
       const message =
@@ -29,7 +24,7 @@ const initialState = {
   error: null,
   success: false,
   dashboardList: {},
- 
+
 };
 
 const dashboardSlice = createSlice({
@@ -41,7 +36,7 @@ const dashboardSlice = createSlice({
       state.error = null;
       state.success = false;
       state.dashboardList = {};
-     
+
     },
   },
   extraReducers: (builder) => {
@@ -59,7 +54,7 @@ const dashboardSlice = createSlice({
         state.loading = false;
         state.error = action.payload || "Failed to fetch dashboard";
       })
-   
+
   },
 });
 

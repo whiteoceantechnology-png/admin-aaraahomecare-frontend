@@ -1,21 +1,22 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import api from "../../utils/api";
+import {
+  fetchAllPartners,
+  editPartnerDetail,
+  fetchPartnerDetail,
+  fetchStoreServices,
+  editPartnerStatus,
+  createPayout,
+  fetchAllPayoutLogs,
+  removePartner,
+  editMultiplePartner,
+} from "./partnersApi";
 
 // get AllPartners
 export const getAllPartnersList = createAsyncThunk(
   "allPartners/getAllPartnersList",
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.post(
-        "/admin/app/getallpartner",
-        {},
-        {
-          headers: {
-            "Content-Type": "application/json", // optional in GET, but included here per request
-          },
-          withCredentials: false,
-        }
-      );
+      const response = await fetchAllPartners();
       return response.data.data;
     } catch (error) {
       const message =
@@ -34,10 +35,7 @@ export const updatePartnerDetail = createAsyncThunk(
     console.log("formData:", formData);
 
     try {
-      const response = await api.post("/admin/app/editpartner", formData, {
-        // ✅ Do NOT set Content-Type manually
-        withCredentials: false,
-      });
+      const response = await editPartnerDetail(formData);
       return response.data.data;
     } catch (error) {
       const message =
@@ -54,12 +52,7 @@ export const getPartnerDetail = createAsyncThunk(
   "allPartners/getPartnerDetail",
   async (id, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/app/getallpartnerdetails", id, {
-        headers: {
-          "Content-Type": "application/json", // optional in GET, but included here per request
-        },
-        withCredentials: false,
-      });
+      const response = await fetchPartnerDetail(id);
       return response.data.data;
     } catch (error) {
       const message =
@@ -76,12 +69,7 @@ export const getStoreServices = createAsyncThunk(
   "partnerDetail/getStoreServices",
   async (id, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/app/getservices", id, {
-        headers: {
-          "Content-Type": "application/json", // optional in GET, but included here per request
-        },
-        withCredentials: false,
-      });
+      const response = await fetchStoreServices(id);
       return response.data.data;
     } catch (error) {
       const message =
@@ -98,16 +86,7 @@ export const updatePartnerStatus = createAsyncThunk(
   "allPartners/updatePartnerStatus",
   async ({ id, status }, { rejectWithValue }) => {
     try {
-      const response = await api.post(
-        "/admin/app/updatepartner",
-        { id, status },
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-          withCredentials: false,
-        }
-      );
+      const response = await editPartnerStatus({ id, status });
       return response.data.data;
     } catch (error) {
       const message =
@@ -124,16 +103,7 @@ export const addPayout = createAsyncThunk(
   "partnerDetail/addPayout",
   async ({ store_id, amount }, { rejectWithValue }) => {
     try {
-      const response = await api.post(
-        "/admin/app/addpayout",
-        { store_id, amount },
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-          withCredentials: false,
-        }
-      );
+      const response = await createPayout({ store_id, amount });
       return response.data.data;
     } catch (error) {
       const message =
@@ -150,12 +120,7 @@ export const getAllPayoutLogs = createAsyncThunk(
   "allPartners/getAllPayoutLogs",
   async (id, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/app/getpayoutlogs", id, {
-        headers: {
-          "Content-Type": "application/json", // optional in GET, but included here per request
-        },
-        withCredentials: false,
-      });
+      const response = await fetchAllPayoutLogs(id);
       return response.data.data;
     } catch (error) {
       const message =
@@ -172,16 +137,7 @@ export const deletePartner = createAsyncThunk(
   "allPartners/deletePartner",
   async (id, { rejectWithValue }) => {
     try {
-      const response = await api.post(
-        "/admin/app/deletePartner",
-        { id },
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-          withCredentials: false,
-        }
-      );
+      const response = await removePartner(id);
       return response.data.data;
     } catch (error) {
       const message =
@@ -198,16 +154,7 @@ export const updateMultiplePartner = createAsyncThunk(
   "allPartners/updateMultiplePartner",
   async ({ ids, status }, { rejectWithValue }) => {
     try {
-      const response = await api.post(
-        "/admin/app/updateMultiplePartner",
-        { ids, status },
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-          withCredentials: false,
-        }
-      );
+      const response = await editMultiplePartner({ ids, status });
       return response.data.data;
     } catch (error) {
       const message =

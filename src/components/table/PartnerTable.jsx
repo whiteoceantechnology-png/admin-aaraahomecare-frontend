@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+﻿import { useState, useRef, useEffect, useMemo } from "react";
 import {
   Search,
   Download,
@@ -22,7 +22,10 @@ import {
 } from "../../redux/slices/partnersSlice";
 import { useDispatch } from "react-redux";
 import Select from "react-select";
-import moment from "moment";
+import Pagination from "../common/Pagination";
+import IconButton from "../common/IconButton";
+import DeleteConfirmationModal from "../details/DeleteConfirmationModal";
+import { formatDate } from "../../utils/formatDate";
 
 const baseUrl = import.meta.env.VITE_API_BASE_URL;
 
@@ -66,7 +69,7 @@ const PartnerTable = ({ data, title }) => {
       case "categoryName":
         return item?.categoryName;
       case "location":
-        // ✅ Handle location object with city
+        // âœ… Handle location object with city
         return item?.location?.city || item?.location || "";
       default:
         return item?.[key];
@@ -76,7 +79,6 @@ const PartnerTable = ({ data, title }) => {
   // Original state
   const [searchTerm, setSearchTerm] = useState("");
   const [visibleColumns, setVisibleColumns] = useState({
-    id: true,
     name: true,
     categoryName: true,
     ownerName: true,
@@ -101,13 +103,14 @@ const PartnerTable = ({ data, title }) => {
     endDate: "",
   });
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(50); // Show 50 items per page
+  const [itemsPerPage, setItemsPerPage] = useState(50);
   const [selectedRows, setSelectedRows] = useState([]);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const tableRef = useRef(null);
 
   const uniqueLocations = useMemo(() => {
     const locations = data
-      .map((item) => item.location?.city) // ✅ extract city
+      .map((item) => item.location?.city) // âœ… extract city
       .filter(Boolean); // remove undefined/null
 
     return [...new Set(locations)]
@@ -133,7 +136,7 @@ const PartnerTable = ({ data, title }) => {
   //     const normalizedValue = value?.toString().trim().toLowerCase();
   //     const normalizedSearch = searchTerm.trim().toLowerCase();
 
-  //     // ✅ Log each key and value clearly
+  //     // âœ… Log each key and value clearly
 
   //     return normalizedValue?.includes(normalizedSearch);
   //   });
@@ -167,7 +170,7 @@ const PartnerTable = ({ data, title }) => {
   const filteredData = data.filter((item) => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
 
-    // ✅ Search across all visible columns (even nested ones)
+    // âœ… Search across all visible columns (even nested ones)
     const matchesSearch =
       !normalizedSearch ||
       Object.keys(visibleColumns).some((key) => {
@@ -175,23 +178,23 @@ const PartnerTable = ({ data, title }) => {
 
         let value = getValue(item, key);
 
-        // ✅ Fallback for direct properties like item.email or item.phone
+        // âœ… Fallback for direct properties like item.email or item.phone
         if (value === undefined && key in item) {
           value = item[key];
         }
 
-        // ✅ If it's an object, search inside its values
+        // âœ… If it's an object, search inside its values
         if (typeof value === "object" && value !== null) {
           return Object.values(value).some((nestedVal) =>
             nestedVal?.toString().toLowerCase().includes(normalizedSearch)
           );
         }
 
-        // ✅ Standard match
+        // âœ… Standard match
         return value?.toString().toLowerCase().includes(normalizedSearch);
       });
 
-    // ✅ Apply filters normally
+    // âœ… Apply filters normally
     const matchesStatusFilter =
       !filters.status || item.status === filters.status;
 
@@ -207,7 +210,7 @@ const PartnerTable = ({ data, title }) => {
       (getValue(item, "registrationDate") >= filters.startDate &&
         getValue(item, "registrationDate") <= filters.endDate);
 
-    // ✅ Return combined result
+    // âœ… Return combined result
     return (
       matchesSearch &&
       matchesStatusFilter &&
@@ -522,12 +525,12 @@ const PartnerTable = ({ data, title }) => {
     });
   };
 
-  const handleDelete = (id) => {
-    if (window.confirm("Are you sure you want to delete this partner?")) {
-      dispatch(deletePartner(id)).then(() => {
-        dispatch(getAllPartnersList());
-      });
-    }
+  const handleConfirmDelete = () => {
+    if (!deleteTarget) return;
+    dispatch(deletePartner(deleteTarget.id)).then(() => {
+      dispatch(getAllPartnersList());
+    });
+    setDeleteTarget(null);
   };
 
   // Calculate colSpan for no data row
@@ -546,7 +549,7 @@ const PartnerTable = ({ data, title }) => {
             placeholder="Search..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+            className="w-full pl-10 pr-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--brand-purple)]/30 focus:border-[var(--brand-purple)] text-gray-900 font-medium"
           />
         </div>
 
@@ -983,7 +986,7 @@ const PartnerTable = ({ data, title }) => {
               onChange={(e) =>
                 setFilters((prev) => ({ ...prev, startDate: e.target.value }))
               }
-              className="w-full py-2 px-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 text-sm"
+              className="w-full py-2 px-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--brand-purple)]/30 focus:border-[var(--brand-purple)] text-gray-900 text-sm font-medium"
             />
           </div>
           <div className="relative flex-1">
@@ -993,38 +996,23 @@ const PartnerTable = ({ data, title }) => {
               onChange={(e) =>
                 setFilters((prev) => ({ ...prev, endDate: e.target.value }))
               }
-              className="w-full py-2 px-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 text-sm"
+              className="w-full py-2 px-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--brand-purple)]/30 focus:border-[var(--brand-purple)] text-gray-900 text-sm font-medium"
             />
           </div>
         </div> */}
 
-        <div className="flex space-x-2">
-          <button
-            style={{ cursor: "pointer" }}
-            onClick={handleDownloadCSV}
-            className="flex items-center px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
-          >
-            <Download size={16} className="mr-1" />
-            <span className="text-sm">Export</span>
-          </button>
-
-          <button
-            style={{ cursor: "pointer" }}
-            onClick={handlePrint}
-            className="flex items-center px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
-          >
-            <Printer size={16} className="mr-1" />
-            <span className="text-sm">Print</span>
-          </button>
+        <div className="flex items-center gap-2">
+          <IconButton icon={Download} label="Export" tone="green" onClick={handleDownloadCSV} />
+          <IconButton icon={Printer} label="Print" tone="neutral" onClick={handlePrint} />
 
           <div className="relative column-toggle-container">
             <button
               style={{ cursor: "pointer" }}
               onClick={() => setShowColumnToggle(!showColumnToggle)}
-              className="flex items-center px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
+              className="flex items-center px-3.5 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors cursor-pointer"
             >
-              <EyeOff size={16} className="mr-1" />
-              <span className="text-sm">Columns</span>
+              <EyeOff size={16} className="mr-1.5" />
+              <span>Columns</span>
               <ChevronDown size={16} className="ml-1" />
             </button>
 
@@ -1058,32 +1046,32 @@ const PartnerTable = ({ data, title }) => {
 
       {/* Bulk Actions Bar */}
       {selectedRows.length > 0 && (
-        <div className="flex items-center justify-between p-4 bg-blue-50 border-b border-blue-200">
+        <div className="flex items-center justify-between p-4 bg-[var(--brand-purple)]/[0.04] border-b border-[var(--brand-purple)]/10">
           <div className="flex items-center space-x-4">
             <span className="text-sm text-gray-700">
               {selectedRows.length} selected
             </span>
             <button
               onClick={handleExportSelected}
-              className="px-3 py-1 bg-blue-500 text-white text-sm rounded-md hover:bg-blue-600 transition-colors"
+              className="px-3.5 py-1.5 bg-[var(--brand-purple)] text-white text-sm font-medium rounded-lg hover:brightness-110 active:scale-95 transition-all duration-200 cursor-pointer"
             >
               Export
             </button>
             <button
               onClick={handleBulkActivate}
-              className="px-3 py-1 bg-green-500 text-white text-sm rounded-md hover:bg-green-600 transition-colors"
+              className="px-3.5 py-1.5 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 active:scale-95 transition-all duration-200 cursor-pointer"
             >
               Activate
             </button>
             <button
               onClick={handleBulkDeactivate}
-              className="px-3 py-1 bg-red-500 text-white text-sm rounded-md hover:bg-red-600 transition-colors"
+              className="px-3.5 py-1.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 active:scale-95 transition-all duration-200 cursor-pointer"
             >
               Deactivate
             </button>
             <button
               onClick={handleBulkDelete}
-              className="px-3 py-1 bg-gray-500 text-white text-sm rounded-md hover:bg-gray-600 transition-colors"
+              className="px-3.5 py-1.5 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 active:scale-95 transition-all duration-200 cursor-pointer"
             >
               Delete
             </button>
@@ -1098,11 +1086,11 @@ const PartnerTable = ({ data, title }) => {
         </div>
       )}
 
-      <div className="overflow-x-auto">
-        <table className="w-full" ref={tableRef}>
-          <thead className="bg-gray-50 border-b border-gray-200">
+      <div className="overflow-auto" style={{ maxHeight: "640px" }}>
+        <table className="w-full text-[13px]" ref={tableRef}>
+          <thead className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="px-2 py-3 w-8">
+              <th className="h-11 px-3 py-0 w-8">
                 <input
                   type="checkbox"
                   checked={isAllSelected}
@@ -1110,15 +1098,10 @@ const PartnerTable = ({ data, title }) => {
                   className="rounded"
                 />
               </th>
-              {visibleColumns.id && (
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  SNo
-                </th>
-              )}
               {visibleColumns.name && (
                 <th
                   onClick={() => handleSort("name")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:bg-gray-100"
+                  className="h-10 px-3 py-0 text-left text-[13px] font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
                 >
                   Name{getSortIcon("name")}
                 </th>
@@ -1126,7 +1109,7 @@ const PartnerTable = ({ data, title }) => {
               {visibleColumns.ownerName && (
                 <th
                   onClick={() => handleSort("ownerName")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:bg-gray-100"
+                  className="h-10 px-3 py-0 text-left text-[13px] font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
                 >
                   Owner Name{getSortIcon("ownerName")}
                 </th>
@@ -1134,7 +1117,7 @@ const PartnerTable = ({ data, title }) => {
               {visibleColumns.phone && (
                 <th
                   onClick={() => handleSort("phone")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:bg-gray-100"
+                  className="h-10 px-3 py-0 text-left text-[13px] font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
                 >
                   Phone{getSortIcon("phone")}
                 </th>
@@ -1142,7 +1125,7 @@ const PartnerTable = ({ data, title }) => {
               {visibleColumns.email && (
                 <th
                   onClick={() => handleSort("email")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:bg-gray-100"
+                  className="h-10 px-3 py-0 text-left text-[13px] font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
                 >
                   Email{getSortIcon("email")}
                 </th>
@@ -1150,7 +1133,7 @@ const PartnerTable = ({ data, title }) => {
               {visibleColumns.categoryName && (
                 <th
                   onClick={() => handleSort("categoryName")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:bg-gray-100"
+                  className="h-10 px-3 py-0 text-left text-[13px] font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
                 >
                   Category{getSortIcon("categoryName")}
                 </th>
@@ -1158,7 +1141,7 @@ const PartnerTable = ({ data, title }) => {
               {visibleColumns.location && (
                 <th
                   onClick={() => handleSort("location")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:bg-gray-100"
+                  className="h-10 px-3 py-0 text-left text-[13px] font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
                 >
                   City/Location{getSortIcon("location")}
                 </th>
@@ -1166,7 +1149,7 @@ const PartnerTable = ({ data, title }) => {
               {visibleColumns.createdAt && (
                 <th
                   onClick={() => handleSort("createdAt")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:bg-gray-100"
+                  className="h-10 px-3 py-0 text-left text-[13px] font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
                 >
                   Registration Date{getSortIcon("createdAt")}
                 </th>
@@ -1174,7 +1157,7 @@ const PartnerTable = ({ data, title }) => {
               {visibleColumns.TotalAppointment && (
                 <th
                   onClick={() => handleSort("TotalAppointment")}
-                  className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:bg-gray-100"
+                  className="h-10 px-3 py-0 text-right text-[13px] font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
                 >
                   Total Appointments{getSortIcon("TotalAppointment")}
                 </th>
@@ -1182,7 +1165,7 @@ const PartnerTable = ({ data, title }) => {
               {visibleColumns.totalRevenue && (
                 <th
                   onClick={() => handleSort("totalRevenue")}
-                  className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:bg-gray-100"
+                  className="h-10 px-3 py-0 text-right text-[13px] font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
                 >
                   Total Revenue{getSortIcon("totalRevenue")}
                 </th>
@@ -1191,12 +1174,12 @@ const PartnerTable = ({ data, title }) => {
               {visibleColumns.status && (
                 <th
                   onClick={() => handleSort("status")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:bg-gray-100"
+                  className="h-10 px-3 py-0 text-left text-[13px] font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
                 >
                   Status{getSortIcon("status")}
                 </th>
               )}
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="h-10 px-3 py-0 text-center text-[13px] font-semibold text-gray-500 uppercase tracking-wide">
                 Actions
               </th>
             </tr>
@@ -1205,8 +1188,13 @@ const PartnerTable = ({ data, title }) => {
           <tbody className="bg-white divide-y divide-gray-200">
             {currentItems.length > 0 ? (
               currentItems.map((item, index) => (
-                <tr key={item.id}>
-                  <td className="px-2 py-4 w-8">
+                <tr
+                  key={item.id}
+                  className={`transition-colors hover:bg-[var(--brand-purple)]/[0.04] ${
+                    index % 2 === 1 ? "bg-gray-50/60" : "bg-white"
+                  }`}
+                >
+                  <td className="px-3 py-2.5 w-8 align-middle">
                     <input
                       type="checkbox"
                       checked={selectedRows.includes(item.id)}
@@ -1214,56 +1202,51 @@ const PartnerTable = ({ data, title }) => {
                       className="rounded"
                     />
                   </td>
-                  {visibleColumns.id && (
-                    <td className="px-6 py-4 capitalize">{index + 1}</td>
-                  )}
                   {visibleColumns.name && (
-                    <td className="px-6 py-4 whitespace-nowrap  capitalize">
+                    <td className="px-3 py-2.5 whitespace-nowrap  capitalize">
                       {item?.name}
                     </td>
                   )}
                   {visibleColumns.ownerName && (
-                    <td className="px-6 py-4 whitespace-nowrap capitalize">
+                    <td className="px-3 py-2.5 whitespace-nowrap capitalize">
                       {item?.ownerDetails?.name}
                     </td>
                   )}
                   {visibleColumns.phone && (
-                    <td className="px-6 py-4 whitespace-nowrap ">
+                    <td className="px-3 py-2.5 whitespace-nowrap ">
                       {item?.ownerDetails?.phone}
                     </td>
                   )}
                   {visibleColumns.email && (
-                    <td className="px-6 py-4 whitespace-nowrap ">
+                    <td className="px-3 py-2.5 whitespace-nowrap ">
                       {item?.email}
                     </td>
                   )}
                   {visibleColumns.categoryName && (
-                    <td className="px-6 py-4 whitespace-nowrap capitalize">
+                    <td className="px-3 py-2.5 whitespace-nowrap capitalize">
                       {item?.categoryName}
                     </td>
                   )}
                   {visibleColumns.location && (
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-3 py-2.5 whitespace-nowrap">
                       {item?.location?.city}
                     </td>
                   )}
                   {visibleColumns.createdAt && (
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {item?.createdAt
-                        ? moment(item.createdAt).format("YYYY-MM-DD")
-                        : "-"}
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      {formatDate(item?.createdAt)}
                     </td>
                   )}
 
                   {visibleColumns.TotalAppointment && (
-                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                    <td className="px-3 py-2.5 whitespace-nowrap text-right">
                       {item?.TotalAppointment}
                     </td>
                   )}
                   {visibleColumns.totalRevenue && (
-                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                    <td className="px-3 py-2.5 whitespace-nowrap text-right">
                       {item?.totalRevenue != null
-                        ? `₹${new Intl.NumberFormat("en-IN").format(
+                        ? `â‚¹${new Intl.NumberFormat("en-IN").format(
                             item.totalRevenue
                           )}`
                         : "-"}
@@ -1389,28 +1372,20 @@ const PartnerTable = ({ data, title }) => {
                       </div>
                     </td>
                   )}
-                  <td className="px-6 py-4">
-                    <div className="flex justify-end space-x-2">
-                      <button
-                        onClick={() => {
-                          navigate(`/partnerdetails/${item?.id}`);
-                        }}
-                        className="p-1 text-indigo-600 hover:text-green-600 hover:bg-gray-100 rounded cursor-pointer"
-                      >
-                        <Eye size={20} />
-                      </button>
-                      {/* <button
+                  <td className="px-2 py-3.5">
+                    <div className="flex items-center justify-center gap-1">
+                      <IconButton
+                        icon={Eye}
+                        label="View"
+                        tone="blue"
                         onClick={() => navigate(`/partnerdetails/${item?.id}`)}
-                        className="p-1 text-blue-600 hover:text-blue-800 hover:bg-gray-100 rounded cursor-pointer"
-                      >
-                        <Edit size={20} />
-                      </button> */}
-                      <button
-                        onClick={() => handleDelete(item?.id)}
-                        className="p-1 text-red-600 hover:text-red-800 hover:bg-gray-100 rounded cursor-pointer"
-                      >
-                        <Trash2 size={20} />
-                      </button>
+                      />
+                      <IconButton
+                        icon={Trash2}
+                        label="Delete"
+                        tone="red"
+                        onClick={() => setDeleteTarget(item)}
+                      />
                     </div>
                   </td>
                 </tr>
@@ -1419,7 +1394,7 @@ const PartnerTable = ({ data, title }) => {
               <tr>
                 <td
                   colSpan={visibleColumnCount}
-                  className="px-6 py-4 text-center text-sm text-gray-500"
+                  className="px-3 py-2.5 text-center text-sm text-gray-500"
                 >
                   No {title.toLowerCase()} found
                 </td>
@@ -1429,236 +1404,25 @@ const PartnerTable = ({ data, title }) => {
         </table>
       </div>
 
-      {/* Pagination */}
-      <div className="border-t border-gray-200 px-4 py-3 flex items-center justify-between">
-        <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm text-gray-700">
-              Showing{" "}
-              <span className="font-medium">
-                {currentItems.length > 0 ? indexOfFirstItem + 1 : 0}
-              </span>{" "}
-              to{" "}
-              <span className="font-medium">
-                {Math.min(indexOfLastItem, sortedData.length)}
-              </span>{" "}
-              of <span className="font-medium">{sortedData.length}</span>{" "}
-              results
-            </p>
-          </div>
-          <div className="flex">
-            <nav className="flex rounded-md" aria-label="Pagination">
-              {/* Previous button with ChevronLeft icon */}
-              <button
-                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1}
-                className={`flex items-center justify-center px-3 py-2 rounded-l-md bg-white text-sm font-medium cursor-pointer ${
-                  currentPage === 1
-                    ? "text-gray-300 cursor-not-allowed"
-                    : "text-gray-500 hover:bg-gray-100"
-                }`}
-              >
-                <ChevronDown className="rotate-90 h-5 w-5" />
-              </button>
+      <Pagination
+        currentPage={currentPage}
+        totalItems={sortedData.length}
+        itemsPerPage={itemsPerPage}
+        onPageChange={setCurrentPage}
+        onItemsPerPageChange={(value) => {
+          setItemsPerPage(value);
+          setCurrentPage(1);
+        }}
+      />
 
-              {/* Fixed width container for page numbers - no borders */}
-              <div className="flex">
-                {(() => {
-                  // Always show exactly 5 elements for consistent width:
-                  // First page, ellipsis/page, current/adjacent, ellipsis/page, last page
+      <DeleteConfirmationModal
+        isOpen={!!deleteTarget}
+        title="Delete Partner"
+        itemName={deleteTarget?.name}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+      />
 
-                  // Create array to hold exactly 5 pagination items
-                  const pages = new Array(5).fill(null);
-
-                  if (totalPages <= 5) {
-                    // Simple case: just show all pages
-                    for (let i = 0; i < Math.min(totalPages, 5); i++) {
-                      const pageNum = i + 1;
-                      pages[i] = (
-                        <button
-                          key={pageNum}
-                          onClick={() => paginate(pageNum)}
-                          className={`flex items-center justify-center w-10 py-2 cursor-pointer mx-0.5 rounded ${
-                            currentPage === pageNum
-                              ? "bg-black text-white font-medium transform scale-110 z-10 shadow-md shadow-black"
-                              : "bg-white text-gray-700 hover:bg-gray-100"
-                          } text-sm transition-all duration-200`}
-                        >
-                          {pageNum}
-                        </button>
-                      );
-                    }
-                  } else {
-                    // Complex case: 5+ pages, show strategic positions
-
-                    // Element 0: Always first page
-                    pages[0] = (
-                      <button
-                        key={1}
-                        onClick={() => paginate(1)}
-                        className={`flex items-center justify-center w-10 py-2 cursor-pointer mx-0.5 rounded ${
-                          currentPage === 1
-                            ? "bg-black text-white font-medium transform scale-110 z-10 shadow-md shadow-black"
-                            : "bg-white text-gray-700 hover:bg-gray-100"
-                        } text-sm transition-all duration-200`}
-                      >
-                        1
-                      </button>
-                    );
-
-                    // Element 4: Always last page
-                    pages[4] = (
-                      <button
-                        key={totalPages}
-                        onClick={() => paginate(totalPages)}
-                        className={`flex items-center justify-center w-10 py-2 cursor-pointer mx-0.5 rounded ${
-                          currentPage === totalPages
-                            ? "bg-black text-white font-medium transform scale-110 z-10 shadow-md shadow-black"
-                            : "bg-white text-gray-700 hover:bg-gray-100"
-                        } text-sm transition-all duration-200`}
-                      >
-                        {totalPages}
-                      </button>
-                    );
-
-                    // Next, determine elements 1, 2, and 3 based on current page position
-                    if (currentPage <= 3) {
-                      // Near the start: show 1, 2, 3, ..., last
-                      pages[1] = (
-                        <button
-                          key={2}
-                          onClick={() => paginate(2)}
-                          className={`flex items-center justify-center w-10 py-2 cursor-pointer mx-0.5 rounded ${
-                            currentPage === 2
-                              ? "bg-black text-white font-medium transform scale-110 z-10 shadow-md shadow-black"
-                              : "bg-white text-gray-700 hover:bg-gray-100"
-                          } text-sm transition-all duration-200`}
-                        >
-                          2
-                        </button>
-                      );
-
-                      pages[2] = (
-                        <button
-                          key={3}
-                          onClick={() => paginate(3)}
-                          className={`flex items-center justify-center w-10 py-2 cursor-pointer mx-0.5 rounded ${
-                            currentPage === 3
-                              ? "bg-black text-white font-medium transform scale-110 z-10 shadow-md shadow-black"
-                              : "bg-white text-gray-700 hover:bg-gray-100"
-                          } text-sm transition-all duration-200`}
-                        >
-                          3
-                        </button>
-                      );
-
-                      pages[3] = (
-                        <button
-                          key="right-dots"
-                          onClick={() => paginate(Math.min(4, totalPages - 1))}
-                          className="flex items-center justify-center w-10 py-2 bg-white text-gray-700 hover:bg-gray-100 text-sm cursor-pointer mx-0.5 rounded transition-all duration-200"
-                        >
-                          ...
-                        </button>
-                      );
-                    } else if (currentPage >= totalPages - 2) {
-                      // Near the end: show 1, ..., last-2, last-1, last
-                      pages[1] = (
-                        <button
-                          key="left-dots"
-                          onClick={() => paginate(Math.max(2, totalPages - 3))}
-                          className="flex items-center justify-center w-10 py-2 bg-white text-gray-700 hover:bg-gray-100 text-sm cursor-pointer mx-0.5 rounded transition-all duration-200"
-                        >
-                          ...
-                        </button>
-                      );
-
-                      pages[2] = (
-                        <button
-                          key={totalPages - 2}
-                          onClick={() => paginate(totalPages - 2)}
-                          className={`flex items-center justify-center w-10 py-2 cursor-pointer mx-0.5 rounded ${
-                            currentPage === totalPages - 2
-                              ? "bg-black text-white font-medium transform scale-110 z-10 shadow-md shadow-black"
-                              : "bg-white text-gray-700 hover:bg-gray-100"
-                          } text-sm transition-all duration-200`}
-                        >
-                          {totalPages - 2}
-                        </button>
-                      );
-
-                      pages[3] = (
-                        <button
-                          key={totalPages - 1}
-                          onClick={() => paginate(totalPages - 1)}
-                          className={`flex items-center justify-center w-10 py-2 cursor-pointer mx-0.5 rounded ${
-                            currentPage === totalPages - 1
-                              ? "bg-black text-white font-medium transform scale-110 z-10 shadow-md shadow-black"
-                              : "bg-white text-gray-700 hover:bg-gray-100"
-                          } text-sm transition-all duration-200`}
-                        >
-                          {totalPages - 1}
-                        </button>
-                      );
-                    } else {
-                      // Middle case: show 1, ..., current, ..., last
-                      pages[1] = (
-                        <button
-                          key="left-dots"
-                          onClick={() => paginate(Math.max(2, currentPage - 1))}
-                          className="flex items-center justify-center w-10 py-2 bg-white text-gray-700 hover:bg-gray-100 text-sm cursor-pointer mx-0.5 rounded transition-all duration-200"
-                        >
-                          ...
-                        </button>
-                      );
-
-                      pages[2] = (
-                        <button
-                          key={currentPage}
-                          onClick={() => paginate(currentPage)}
-                          className="flex items-center justify-center w-10 py-2 bg-black text-white font-medium text-sm cursor-pointer mx-0.5 rounded transform scale-110 z-10 shadow-md shadow-black transition-all duration-200"
-                        >
-                          {currentPage}
-                        </button>
-                      );
-
-                      pages[3] = (
-                        <button
-                          key="right-dots"
-                          onClick={() =>
-                            paginate(Math.min(currentPage + 1, totalPages - 1))
-                          }
-                          className="flex items-center justify-center w-10 py-2 bg-white text-gray-700 hover:bg-gray-100 text-sm cursor-pointer mx-0.5 rounded transition-all duration-200"
-                        >
-                          ...
-                        </button>
-                      );
-                    }
-                  }
-
-                  // Filter out any null elements (if totalPages < 5)
-                  return pages.filter(Boolean);
-                })()}
-              </div>
-
-              {/* Next button with ChevronRight icon */}
-              <button
-                onClick={() =>
-                  setCurrentPage((prev) => Math.min(prev + 1, totalPages))
-                }
-                disabled={currentPage === totalPages || totalPages === 0}
-                className={`flex items-center justify-center px-3 py-2 rounded-r-md bg-white text-sm font-medium cursor-pointer ${
-                  currentPage === totalPages || totalPages === 0
-                    ? "text-gray-300 cursor-not-allowed"
-                    : "text-gray-500 hover:bg-gray-100"
-                }`}
-              >
-                <ChevronDown className="rotate-270 h-5 w-5" />
-              </button>
-            </nav>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };

@@ -1,7 +1,25 @@
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
-import { Save, X } from "lucide-react";
+import { useDispatch, useSelector } from "react-redux";
+import { UploadCloud, X } from "lucide-react";
+import { uploadImage } from "../../redux/slices/imageSlice";
 
-const TaxForm = ({ onSubmit, onCancel, defaultValues = {} }) => {
+const inputClass = (hasError) =>
+  `w-full px-3.5 py-2.5 rounded-lg border text-[15px] font-medium text-gray-900 placeholder:text-gray-400 transition-colors focus:outline-none focus:ring-2 ${
+    hasError
+      ? "border-red-300 focus:ring-red-200 focus:border-red-400"
+      : "border-gray-200 focus:ring-[var(--brand-purple)]/25 focus:border-[var(--brand-purple)]"
+  }`;
+
+const CategoryForm = ({ onSubmit, onCancel, defaultValues = {}, loading = false }) => {
+  const dispatch = useDispatch();
+  const { loading: imageLoading } = useSelector((state) => state.image);
+  const isEdit = Boolean(defaultValues.id);
+  const fileInputRef = useRef(null);
+
+  const [imagePath, setImagePath] = useState(defaultValues.image || "");
+  const [isDragging, setIsDragging] = useState(false);
+
   const {
     register,
     handleSubmit,
@@ -9,100 +27,168 @@ const TaxForm = ({ onSubmit, onCancel, defaultValues = {} }) => {
     reset,
   } = useForm({
     defaultValues: {
-      taxName: defaultValues.taxName || "",
-      taxPercentage: defaultValues.taxPercentage ?? 0,
+      name: defaultValues.name || "",
     },
   });
 
-  const onFormSubmit = (data) => {
-    const finalData = {
-      id: defaultValues.id || null,
-      taxName: data.taxName,
-      taxPercentage: Number(data.taxPercentage) || 0,
-      // Created / Updated backend or parent component handle pannalaam
-    };
+  useEffect(() => {
+    reset({
+      name: defaultValues.name || "",
+    });
+    setImagePath(defaultValues.image || "");
+  }, [defaultValues, reset]);
 
-    onSubmit(finalData);
-    reset();
+  /* AUTO UPLOAD ON FILE SELECT / DROP */
+  const uploadFile = async (file) => {
+    if (!file) return;
+    const res = await dispatch(uploadImage(file));
+    if (uploadImage.fulfilled.match(res)) {
+      setImagePath(res.payload.path);
+    }
   };
 
+  const handleFileInput = (e) => uploadFile(e.target.files[0]);
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    uploadFile(e.dataTransfer.files?.[0]);
+  };
+
+  /* SUBMIT */
+  const onFormSubmit = (data) => {
+    const payload = {
+      name: data.name,
+      categoryImage: imagePath,
+    };
+
+    onSubmit({
+      id: defaultValues.id || null,
+      data: payload,
+    });
+
+    if (!defaultValues.id) {
+      reset({ name: "" });
+      setImagePath("");
+    }
+  };
+
+  const previewUrl = imagePath ? `${import.meta.env.VITE_API_BASE_URL}/${imagePath}` : null;
+  const primaryLabel = imageLoading
+    ? "Uploading..."
+    : loading
+      ? "Saving..."
+      : "Save Category";
+
   return (
-    <form
-      onSubmit={handleSubmit(onFormSubmit)}
-      className="grid grid-cols-1 md:grid-cols-2 gap-6"
-    >
-      {/* Tax Name */}
-      <div className="flex flex-col md:col-span-2">
-        <label className="text-sm font-medium text-gray-700 mb-1">
-          Tax Name
+    <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-5">
+      {/* NAME */}
+      <div className="flex flex-col">
+        <label className="text-[14px] font-medium text-gray-700 mb-1.5">
+          Category Name
         </label>
+
         <input
           type="text"
-          {...register("taxName", {
-            required: "Tax name is required",
-            minLength: { value: 2, message: "Minimum 2 characters" },
+          {...register("name", {
+            required: "Category name is required",
+            minLength: {
+              value: 2,
+              message: "Category name must be at least 2 characters",
+            },
           })}
-          placeholder="Enter tax name (e.g. GST, VAT)"
-          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
-            errors.taxName
-              ? "border-red-500 focus:ring-red-500"
-              : "border-gray-300 focus:ring-blue-500"
-          }`}
+          placeholder="e.g. Fruits & Vegetables"
+          className={inputClass(errors.name)}
         />
-        {errors.taxName && (
-          <p className="text-sm text-red-500 mt-1">
-            {errors.taxName.message}
-          </p>
+
+        {errors.name && (
+          <p className="text-red-600 text-xs mt-1.5">{errors.name.message}</p>
         )}
       </div>
 
-      {/* Tax Percentage */}
-      <div className="flex flex-col md:col-span-2 md:max-w-xs">
-        <label className="text-sm font-medium text-gray-700 mb-1">
-          Tax Percentage
+      {/* IMAGE — drag & drop uploader */}
+      <div className="flex flex-col">
+        <label className="text-[14px] font-medium text-gray-700 mb-1.5">
+          Category Image
         </label>
+
         <input
-          type="number"
-          step="0.01"
-          {...register("taxPercentage", {
-            required: "Tax percentage is required",
-            min: { value: 0, message: "Min 0%" },
-            max: { value: 100, message: "Max 100%" },
-          })}
-          placeholder="e.g. 18"
-          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
-            errors.taxPercentage
-              ? "border-red-500 focus:ring-red-500"
-              : "border-gray-300 focus:ring-blue-500"
-          }`}
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFileInput}
+          className="hidden"
         />
-        {errors.taxPercentage && (
-          <p className="text-sm text-red-500 mt-1">
-            {errors.taxPercentage.message}
-          </p>
+
+        {previewUrl ? (
+          <div className="relative group rounded-xl overflow-hidden border border-gray-200">
+            <img
+              src={previewUrl}
+              alt="Category preview"
+              className="w-full h-44 object-cover"
+            />
+            <button
+              type="button"
+              onClick={() => setImagePath("")}
+              aria-label="Remove image"
+              className="absolute top-2 right-2 flex items-center justify-center w-7 h-7 rounded-lg bg-white/95 text-red-600 shadow-sm hover:bg-white transition-colors cursor-pointer"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        ) : (
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => fileInputRef.current?.click()}
+            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && fileInputRef.current?.click()}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDragging(true);
+            }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
+            className={`flex flex-col items-center justify-center gap-2 h-44 rounded-xl border-2 border-dashed cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--brand-purple)]/25 ${
+              isDragging
+                ? "border-[var(--brand-purple)] bg-[var(--brand-purple)]/5"
+                : "border-gray-200 hover:border-[var(--brand-purple)]/40 hover:bg-gray-50"
+            }`}
+          >
+            <div className="w-10 h-10 rounded-full bg-[var(--brand-purple)]/10 flex items-center justify-center text-[var(--brand-purple)]">
+              <UploadCloud size={18} />
+            </div>
+            <p className="text-[13px] font-medium text-gray-600">
+              Click to upload or drag &amp; drop
+            </p>
+            <p className="text-[11px] text-gray-400">PNG or JPG, up to 5MB</p>
+          </div>
+        )}
+
+        {imageLoading && (
+          <p className="text-[var(--brand-purple)] text-xs mt-2">Uploading...</p>
         )}
       </div>
 
-      {/* Buttons */}
-      <div className="md:col-span-2 flex justify-end gap-3 pt-2">
+      {/* BUTTONS */}
+      <div className="flex justify-end gap-3 pt-2">
         <button
           type="button"
           onClick={onCancel}
-          className="flex items-center cursor-pointer px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100"
+          className="px-4 py-2.5 h-12 rounded-xl text-[14px] font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50 active:scale-[0.98] transition-all duration-200 cursor-pointer"
         >
-          <X size={16} className="mr-1" />
           Cancel
         </button>
+
         <button
           type="submit"
-          className="flex items-center cursor-pointer px-4 py-2 bg-black hover:bg-black text-white rounded-md"
+          disabled={imageLoading || loading}
+          className="px-4 py-2.5 h-12 rounded-xl text-[14px] font-semibold text-white bg-gradient-to-r from-[var(--brand-purple)] to-[var(--brand-purple-dark)] shadow-sm hover:brightness-110 active:scale-[0.98] transition-all duration-200 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:brightness-100"
         >
-          <Save size={16} className="mr-1" />
-          {defaultValues.id ? "Update" : "Save"}
+          {primaryLabel}
         </button>
       </div>
     </form>
   );
 };
 
-export default TaxForm;
+export default CategoryForm;

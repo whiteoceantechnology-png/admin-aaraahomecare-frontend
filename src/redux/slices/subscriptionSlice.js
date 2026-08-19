@@ -1,6 +1,10 @@
-
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import api from "../../utils/api";
+import {
+  fetchAllSubscriptions,
+  createSubscription,
+  editSubscription,
+  editSubscriptionStatus,
+} from "./subscriptionApi";
 
 
 
@@ -9,12 +13,7 @@ export const getAllSubscriptionsList = createAsyncThunk(
   "allSubscriptions/getAllSubscriptionsList",
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/app/getallsubscriptions", {},{
-        headers: {
-          "Content-Type": "application/json", // optional in GET, but included here per request
-        },
-        withCredentials: false,
-      });
+      const response = await fetchAllSubscriptions();
       return response.data.data;
     } catch (error) {
       const message =
@@ -31,12 +30,7 @@ export const addSubscription = createAsyncThunk(
   "allSubscriptions/addSubscription",
   async (subscriptionData, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/app/addsubscription", subscriptionData, {
-        headers: {
-          "Content-Type": "application/json", // optional in GET, but included here per request
-        },
-        withCredentials: false,
-      });
+      const response = await createSubscription(subscriptionData);
       return response.data.data;
     } catch (error) {
       const message =
@@ -48,17 +42,29 @@ export const addSubscription = createAsyncThunk(
   }
 );
 
+// update subscription (full edit)
+export const updateSubscription = createAsyncThunk(
+  "allSubscriptions/updateSubscription",
+  async (subscriptionData, { rejectWithValue }) => {
+    try {
+      const response = await editSubscription(subscriptionData);
+      return response.data.data;
+    } catch (error) {
+      const message =
+        error.response?.data?.error?.message ||
+        error.message ||
+        "Failed to update subscription";
+      return rejectWithValue(message);
+    }
+  }
+);
+
 // update subscription Status
 export const updateSubscriptionStatus = createAsyncThunk(
   "allSubscriptions/updateSubscriptionStatus",
   async ({ id, status }, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/app/updatesubscription", { id, status }, {
-        headers: {
-          "Content-Type": "application/json",
-        },
-        withCredentials: false,
-      });
+      const response = await editSubscriptionStatus({ id, status });
       return response.data.data;
     } catch (error) {
       const message =
@@ -113,11 +119,24 @@ const allSubscriptionsSlice = createSlice({
       })
       .addCase(addSubscription.fulfilled, (state) => {
         state.loading = false;
-               
+
       })
       .addCase(addSubscription.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload || "Failed to add Subscription";
+      })
+
+      // update subscription (full edit)
+      .addCase(updateSubscription.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(updateSubscription.fulfilled, (state) => {
+        state.loading = false;
+      })
+      .addCase(updateSubscription.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload || "Failed to update subscription";
       })
 
       // update subscription Status
@@ -132,7 +151,7 @@ const allSubscriptionsSlice = createSlice({
         state.loading = false;
         state.error = action.payload || "Failed to update Subscription Status";
       });
-              
+
   },
 });
 

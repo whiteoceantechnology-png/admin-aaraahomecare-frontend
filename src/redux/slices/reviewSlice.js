@@ -1,6 +1,8 @@
-
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import api from "../../utils/api";
+import {
+  fetchAllDeleteReviewRequests,
+  editReviewRequest,
+} from "./reviewApi";
 
 
 
@@ -9,12 +11,7 @@ export const getAllDeleteReviewRequest = createAsyncThunk(
   "allReview/getAllDeleteReviewRequest",
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/app/getreviewrequest", {},{
-        headers: {
-          "Content-Type": "application/json", // optional in GET, but included here per request
-        },
-        withCredentials: false,
-      });
+      const response = await fetchAllDeleteReviewRequests();
       return response.data.data;
     } catch (error) {
       const message =
@@ -31,12 +28,7 @@ export const updateReviewRequest = createAsyncThunk(
   "allReview/updatereviewrequest",
   async ({ id,review_id, status }, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/app/updatereviewrequest", { id, review_id,status }, {
-        headers: {
-          "Content-Type": "application/json", // optional in GET, but included here per request
-        },
-        withCredentials: false,
-      });
+      const response = await editReviewRequest({ id, review_id, status });
       return response.data.data;
     } catch (error) {
       const message =
@@ -92,15 +84,15 @@ const allReviewSlice = createSlice({
       })
       .addCase(updateReviewRequest.fulfilled, (state) => {
         state.loading = false;
-       
-        
+
+
       })
       .addCase(updateReviewRequest.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload || "Failed to update review request";
       });
- 
-          
+
+
   },
 });
 

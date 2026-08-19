@@ -1,43 +1,48 @@
 // src/components/table/CustomerTable.jsx
-import { useState, useRef, useEffect } from "react";
+// Matches the mk design system used by Product/Category/Order/Brand — one
+// card (owned by the parent Customer.jsx) with a toolbar row (search only;
+// no Export/Print/filter controls) directly above the table, exactly like
+// every other list page's toolbar/table structure. Previously this used its
+// own separate search-card + table-card layout, which is what caused the
+// Orders/Customers alignment mismatch.
+import { useState, useEffect } from "react";
+import { Eye, X } from "lucide-react";
+import CommonTable from "../common/CommonTable";
+import Pagination from "../common/Pagination";
+import IconButton from "../common/IconButton";
+import MkPill from "../common/MkPill";
+import { formatDate } from "../../utils/formatDate";
 import {
-  Search,
-  Download,
-  Printer,
-  EyeOff,
-  ChevronDown,
-  ArrowUp,
-  ArrowDown,
-  Eye,
-} from "lucide-react";
+  FILTER_SEARCH_WRAP_CLASS,
+  FILTER_SEARCH_ICON_WRAP_CLASS,
+  FILTER_SEARCH_INPUT_CLASS,
+} from "../common/filterToolbarStyles";
 
-const CustomerTable = ({
-  data = [],
-  title = "Customers",
-  onRowClick,
-  onDelete,
-}) => {
+const hasValue = (v) => v !== null && v !== undefined;
+
+const fmtMoney = (n) =>
+  `₹${Number(n ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+// Cosmetic grouping of a raw phone string for display only (e.g. "90000 00009")
+// — never mutates the underlying value used for search/matching.
+const formatPhone = (phone) => {
+  const digits = (phone || "").toString().replace(/\D/g, "");
+  if (digits.length !== 10) return phone || "—";
+  return `${digits.slice(0, 5)} ${digits.slice(5)}`;
+};
+
+const CustomerTable = ({ data = [], title = "Customers", onToggleBlock, onView, onViewOrders }) => {
   const [searchTerm, setSearchTerm] = useState("");
-  const [visibleColumns, setVisibleColumns] = useState({
-    id: true,
-    userName: true,
-    phone: true,
-    gender: true,
-    email: true,
-    status: true,
-  });
-  const [showColumnToggle, setShowColumnToggle] = useState(false);
-  const [sortField, setSortField] = useState("userName");
+  const [sortField, setSortField] = useState("name");
   const [sortDirection, setSortDirection] = useState("asc");
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
-  const tableRef = useRef(null);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   const filteredData = data.filter((item) => {
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
-    return ["userName", "phone", "email", "status"].some((key) =>
-      item[key]?.toString().toLowerCase().includes(term)
+    return ["name", "phone", "email"].some((key) =>
+      item[key]?.toString().toLowerCase().includes(term),
     );
   });
 
@@ -52,11 +57,6 @@ const CustomerTable = ({
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = sortedData.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(sortedData.length / itemsPerPage) || 1;
-
-  const toggleColumn = (column) => {
-    setVisibleColumns((prev) => ({ ...prev, [column]: !prev[column] }));
-  };
 
   const handleSort = (field) => {
     if (sortField === field) {
@@ -67,363 +67,144 @@ const CustomerTable = ({
     }
   };
 
-  const getSortIcon = (field) => {
-    if (sortField !== field) return null;
-    return sortDirection === "asc" ? (
-      <ArrowUp size={14} className="ml-1" />
-    ) : (
-      <ArrowDown size={14} className="ml-1" />
-    );
-  };
-
-  const handleDownloadCSV = () => {
-    const cols = Object.keys(visibleColumns).filter((c) => visibleColumns[c]);
-    const headers = cols
-      .map((c) =>
-        c === "id"
-          ? "SNo"
-          : c === "userName"
-          ? "Name"
-          : c.charAt(0).toUpperCase() + c.slice(1)
-      )
-      .join(",");
-    let csv = headers + "\r\n";
-
-    sortedData.forEach((item, idx) => {
-      const row = cols
-        .map((key) =>
-          key === "id"
-            ? `"${idx + 1}"`
-            : `"${(item[key] ?? "").toString().replace(/"/g, '""')}"`
-        )
-        .join(",");
-      csv += row + "\r\n";
-    });
-
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${title.toLowerCase()}_data.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  };
-
-  const handlePrint = () => {
-    const cols = Object.keys(visibleColumns).filter((c) => visibleColumns[c]);
-    let html = "<html><head><title>Print</title>";
-    html +=
-      "<style>table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f2f2f2}</style></head><body>";
-    html += `<h2>${title}</h2><table><thead><tr>`;
-    cols.forEach((c) => {
-      let label =
-        c === "id"
-          ? "SNo"
-          : c === "userName"
-          ? "Name"
-          : c.charAt(0).toUpperCase() + c.slice(1);
-      html += `<th>${label}</th>`;
-    });
-    html += "</tr></thead><tbody>";
-    sortedData.forEach((item, idx) => {
-      html += "<tr>";
-      cols.forEach((c) => {
-        let value = c === "id" ? idx + 1 : item[c] ?? "";
-        html += `<td>${value}</td>`;
-      });
-      html += "</tr>";
-    });
-    html += "</tbody></table></body></html>";
-
-    const frame = document.createElement("iframe");
-    frame.style.position = "absolute";
-    frame.style.top = "-999px";
-    document.body.appendChild(frame);
-    frame.contentDocument.write(html);
-    frame.contentDocument.close();
-    setTimeout(() => {
-      frame.contentWindow.print();
-      document.body.removeChild(frame);
-    }, 300);
-  };
-
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm]);
 
-  useEffect(() => {
-    const handler = (e) => {
-      if (
-        showColumnToggle &&
-        !e.target.closest(".column-toggle-container") &&
-        !e.target.closest(".column-toggle-button")
-      ) {
-        setShowColumnToggle(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showColumnToggle]);
+  const columns = [
+    {
+      key: "name",
+      header: "Customer",
+      sortable: true,
+      width: "240px",
+      className: "text-[var(--mk-ink-900)]",
+      render: (item) => (
+        <div className="flex items-center gap-2 min-w-0">
+          <p className="text-[13.5px]  text-[var(--mk-ink-900)] truncate max-w-[130px] shrink-0" title={item.name}>
+            {item.name || "—"}
+          </p>
+          {item.mergedCount > 1 && (
+            <MkPill label={`${item.mergedCount} accounts merged`} tone="info" size="sm" />
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "phone",
+      header: "Phone",
+      width: "110px",
+      className: "text-[13px] text-[var(--mk-ink-700)] tabular-nums",
+      render: (item) => formatPhone(item.phone),
+    },
+    {
+      key: "email",
+      header: "Primary Email",
+      width: "220px",
+      truncate: true,
+      truncateWidth: "200px",
+      className: "text-[12px] text-[var(--mk-ink-700)]",
+      render: (item) => item.email || "—",
+    },
+    {
+      key: "orders",
+      header: "Orders",
+      width: "80px",
+      align: "right",
+      className: "text-[13px] text-[var(--mk-ink-700)] tabular-nums",
+      render: (item) => item.ordersCount ?? 0,
+    },
+    {
+      key: "lifetimeSpend",
+      header: "Lifetime Spend",
+      width: "110px",
+      align: "right",
+      className: "text-[13px] text-[var(--mk-ink-900)] font-semibold tabular-nums",
+      render: (item) => (hasValue(item.lifetimeSpend) ? fmtMoney(item.lifetimeSpend) : "—"),
+    },
+    {
+      key: "createdAt",
+      header: "Joined",
+      width: "110px",
+      className: "text-[13px] text-[var(--mk-ink-500)]",
+      render: (item) => formatDate(item?.createdAt),
+    },
+    {
+      key: "isBlocked",
+      header: "Status",
+      width: "100px",
+      render: (item) => (
+        <MkPill label={item.isBlocked ? "Blocked" : "Active"} tone={item.isBlocked ? "dgr" : "ok"} size="sm" />
+      ),
+    },
+  ];
 
   return (
     <div>
-      {/* Top bar */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center p-4 border-b border-gray-200">
-        <div className="relative w-full md:w-64 mb-4 md:mb-0">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search size={16} className="text-gray-400" />
+      <div className="flex items-center gap-1 p-[16px] overflow-x-auto border-b border-[var(--mk-line)]">
+        <div className={FILTER_SEARCH_WRAP_CLASS}>
+          <div className={FILTER_SEARCH_ICON_WRAP_CLASS}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[var(--mk-ink-400)]">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
           </div>
           <input
             type="text"
-            placeholder="Search by name, phone, email..."
+            placeholder="Search by name, phone or email"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+            className={FILTER_SEARCH_INPUT_CLASS}
           />
         </div>
-
-        <div className="flex space-x-2">
-          <button
-            style={{ cursor: "pointer" }}
-            onClick={handleDownloadCSV}
-            className="flex items-center px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
-          >
-            <Download size={16} className="mr-1" />
-            <span className="text-sm">Export</span>
-          </button>
-
-          <button
-            style={{ cursor: "pointer" }}
-            onClick={handlePrint}
-            className="flex items-center px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
-          >
-            <Printer size={16} className="mr-1" />
-            <span className="text-sm">Print</span>
-          </button>
-
-          <div className="relative column-toggle-container">
-            <button
-              style={{ cursor: "pointer" }}
-              onClick={() => setShowColumnToggle((p) => !p)}
-              className="column-toggle-button flex items-center px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
-            >
-              <EyeOff size={16} className="mr-1" />
-              <span className="text-sm">Columns</span>
-              <ChevronDown size={16} className="ml-1" />
-            </button>
-
-            {showColumnToggle && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-10 border border-gray-200">
-                <div className="p-2">
-                  <h4 className="text-sm font-medium text-gray-700 mb-2">
-                    Toggle Columns
-                  </h4>
-                  <div className="space-y-1">
-                    {Object.keys(visibleColumns).map((column) => (
-                      <label
-                        key={column}
-                        className="flex items-center text-sm capitalize"
-                      >
-                        <input
-                          style={{ cursor: "pointer" }}
-                          type="checkbox"
-                          checked={visibleColumns[column]}
-                          onChange={() => toggleColumn(column)}
-                          className="mr-2"
-                        />
-                        {column === "id"
-                          ? "SNo"
-                          : column === "userName"
-                          ? "Name"
-                          : column}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full" ref={tableRef}>
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {visibleColumns.id && (
-                <th
-                  onClick={() => handleSort("id")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                >
-                  SNo {getSortIcon("id")}
-                </th>
-              )}
-              {visibleColumns.userName && (
-                <th
-                  onClick={() => handleSort("userName")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                >
-                  Name {getSortIcon("userName")}
-                </th>
-              )}
-              {visibleColumns.phone && (
-                <th
-                  onClick={() => handleSort("phone")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                >
-                  Phone {getSortIcon("phone")}
-                </th>
-              )}
-              {visibleColumns.gender && (
-                <th
-                  onClick={() => handleSort("gender")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                >
-                  Gender {getSortIcon("gender")}
-                </th>
-              )}
-              {visibleColumns.email && (
-                <th
-                  onClick={() => handleSort("email")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                >
-                  Email {getSortIcon("email")}
-                </th>
-              )}
-              {visibleColumns.status && (
-                <th
-                  onClick={() => handleSort("status")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                >
-                  Status {getSortIcon("status")}
-                </th>
-              )}
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
-            </tr>
-          </thead>
+      <CommonTable
+        columns={columns}
+        data={currentItems}
+        sortField={sortField}
+        sortDirection={sortDirection}
+        onSort={handleSort}
+        emptyMessage={`No ${title.toLowerCase()} found`}
+        minWidth="1000px"
+        actionsWidth="90px"
+        headerBgClass="bg-[#FAFBFD]"
+        headerTextClass="text-[10.5px] font-semibold text-[var(--mk-ink-400)] tracking-[0.08em]"
+        headerHeightClass="h-[38px]"
+        rowPaddingY="py-[10px]"
+        onRowClick={onView}
+        renderRowActions={(item) => (
+          <>
+            <IconButton
+              icon={Eye}
+              label="View orders"
+              tone="flat"
+              size={18}
+              onClick={(e) => {
+                e.stopPropagation();
+                onViewOrders && onViewOrders(item);
+              }}
+            />
+            <IconButton
+              icon={X}
+              label={item.isBlocked ? "Unblock customer" : "Block customer"}
+              tone="flatDanger"
+              size={18}
+              onClick={() => onToggleBlock && onToggleBlock(item.id)}
+            />
+          </>
+        )}
+      />
 
-          <tbody className="bg-white divide-y divide-gray-200">
-            {currentItems.length > 0 ? (
-              currentItems.map((item, index) => (
-                <tr key={item.id}>
-                  {visibleColumns.id && (
-                    <td className="px-6 py-4">
-                      {indexOfFirstItem + index + 1}
-                    </td>
-                  )}
-                  {visibleColumns.userName && (
-                    <td className="px-6 py-4 capitalize">
-                      {item.userName}
-                    </td>
-                  )}
-                  {visibleColumns.phone && (
-                    <td className="px-6 py-4">{item.phone}</td>
-                  )}
-                  {visibleColumns.gender && (
-                    <td className="px-6 py-4 capitalize">{item.gender}</td>
-                  )}
-                  {visibleColumns.email && (
-                    <td className="px-6 py-4">{item.email}</td>
-                  )}
-                  {visibleColumns.status && (
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span
-                        className={`px-3 inline-flex text-xs leading-5 font-semibold rounded capitalize ${
-                          item.status === "active"
-                            ? "bg-green-100 text-green-800"
-                            : "bg-red-100 text-red-800"
-                        }`}
-                      >
-                        {item.status}
-                      </span>
-                    </td>
-                  )}
-                  <td className="px-6 py-4 text-right space-x-2">
-                    <button
-                      type="button"
-                      style={{ cursor: "pointer" }}
-                      className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200"
-                      title="View"
-                      onClick={() => onRowClick && onRowClick(item)}
-                    >
-                      <Eye size={16} />
-                    </button>
-                    <button
-                      type="button"
-                      style={{ cursor: "pointer" }}
-                      className="text-red-600 hover:text-red-900 text-xs ml-2"
-                      onClick={() => onDelete && onDelete(item.id)}
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td
-                  colSpan="8"
-                  className="px-6 py-4 text-center text-sm text-gray-500"
-                >
-                  No {title.toLowerCase()} found
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Pagination */}
-      <div className="border-t border-gray-200 px-4 py-3 flex items-center justify-between">
-        <p className="text-sm text-gray-700">
-          Showing{" "}
-          <span className="font-medium">
-            {currentItems.length > 0 ? indexOfFirstItem + 1 : 0}
-          </span>{" "}
-          to{" "}
-          <span className="font-medium">
-            {Math.min(indexOfLastItem, sortedData.length)}
-          </span>{" "}
-          of <span className="font-medium">{sortedData.length}</span> results
-        </p>
-        <div className="flex">
-          <button
-            onClick={() =>
-              setCurrentPage((prev) => Math.max(prev - 1, 1))
-            }
-            disabled={currentPage === 1}
-            className={`px-3 py-1 text-sm rounded-l-md ${
-              currentPage === 1
-                ? "text-gray-300 cursor-not-allowed"
-                : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            Prev
-          </button>
-          <span className="px-4 py-1 text-sm text-gray-700">
-            {currentPage} / {totalPages}
-          </span>
-          <button
-            onClick={() =>
-              setCurrentPage((prev) =>
-                Math.min(prev + 1, totalPages)
-              )
-            }
-            disabled={currentPage === totalPages}
-            className={`px-3 py-1 text-sm rounded-r-md ${
-              currentPage === totalPages
-                ? "text-gray-300 cursor-not-allowed"
-                : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            Next
-          </button>
-        </div>
-      </div>
+      <Pagination
+        currentPage={currentPage}
+        totalItems={sortedData.length}
+        itemsPerPage={itemsPerPage}
+        onPageChange={setCurrentPage}
+        onItemsPerPageChange={(value) => {
+          setItemsPerPage(value);
+          setCurrentPage(1);
+        }}
+      />
     </div>
   );
 };

@@ -9,7 +9,7 @@ const Partner = ({ title }) => {
   const dispatch = useDispatch();
 
   const allPartnersValue = useSelector(
-    (state) => state.allPartners.allPartnersList
+    (state) => state.allPartners.allPartnersList,
   );
   const loading = useSelector((state) => state.allPartners.loading);
   const error = useSelector((state) => state.allPartners.error);
@@ -25,40 +25,29 @@ const Partner = ({ title }) => {
   }, [allPartnersValue]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      {/* HEADER */}
       <div>
-        <h2 className="text-2xl font-bold text-gray-800 mb-6">{title}</h2>
-        {/* Error Message */}
+        <h2 className="text-[20px] lg:text-[34px] font-bold text-gray-900 tracking-[-0.02em] leading-[1.2]">
+          {title}
+        </h2>
+        <p className="text-[15px] font-medium text-gray-500 mt-1.5 leading-[1.6]">
+          Manage the partner stores on your platform.
+        </p>
+      </div>
+
+      {/* TABLE */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-[var(--shadow-card)] overflow-hidden">
         {error ? (
-          <div className="text-red-600 bg-red-50 border border-red-200 p-4 rounded-md mb-4">
-            ⚠️ Failed to load partners: {error}
+          <div className="py-16 text-center text-sm text-red-500">
+            Failed to load partners: {error}
           </div>
         ) : loading ? (
-          <div className="flex items-center justify-center py-10 text-gray-500">
-            <svg
-              className="animate-spin h-5 w-5 text-purple-500 mr-2"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8v8H4z"
-              />
-            </svg>
-            Loading partners...
+          <div className="py-16 text-center text-sm text-gray-400">
+            Loading partners…
           </div>
         ) : (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-            <PartnerTable data={data} title={title} />
-          </div>
+          <PartnerTable data={data} title={title} />
         )}
       </div>
     </div>

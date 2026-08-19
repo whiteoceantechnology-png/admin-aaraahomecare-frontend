@@ -1,6 +1,5 @@
-
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import api from "../../utils/api";
+import { fetchAllNotifications, createNotification } from "./notificationApi";
 
 
 
@@ -9,12 +8,7 @@ export const getAllNotificationList = createAsyncThunk(
   "allNotification/getAllNotificationList",
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/app/getalnotification", {},{
-        headers: {
-          "Content-Type": "application/json", // optional in GET, but included here per request
-        },
-        withCredentials: false,
-      });
+      const response = await fetchAllNotifications();
       return response.data.data;
     } catch (error) {
       const message =
@@ -31,12 +25,7 @@ export const addNotification = createAsyncThunk(
   "allNotification/addNotification",
   async (notificationData, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/app/addnotification", notificationData, {
-        headers: {
-          "Content-Type": "application/json", // optional in GET, but included here per request
-        },
-        withCredentials: false,
-      });
+      const response = await createNotification(notificationData);
       return response.data.data;
     } catch (error) {
       const message =
@@ -93,14 +82,14 @@ const allNotificationSlice = createSlice({
       .addCase(addNotification.fulfilled, (state) => {
         state.loading = false;
         //state.allNotificationList = action.payload;
-        
+
       })
       .addCase(addNotification.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload || "Failed to add notification";
       });
- 
-          
+
+
   },
 });
 

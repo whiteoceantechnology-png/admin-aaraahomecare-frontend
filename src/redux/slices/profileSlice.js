@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import api from "../../utils/api";
+import { fetchProfile } from "./profileApi";
 // Add profile
 // export const addProfile = createAsyncThunk(
 //   "profile/addProfile",
@@ -24,12 +24,7 @@ export const getProfile = createAsyncThunk(
   "profile/getProfile",
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.get("/admin/app/profile", {
-        headers: {
-          "Content-Type": "application/json",
-        },
-        withCredentials: false,
-      });
+      const response = await fetchProfile();
       return response.data.data;
     } catch (error) {
       const message =

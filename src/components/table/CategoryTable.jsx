@@ -1,42 +1,92 @@
 // src/components/table/CategoryTable.jsx
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
+import { toast } from "react-hot-toast";
+import { Download, Eye, Pencil, Archive, FolderTree, Plus, Upload } from "lucide-react";
+import DeleteConfirmationModal from "../details/DeleteConfirmationModal";
+import Pagination from "../common/Pagination";
+import IconButton from "../common/IconButton";
+import Modal from "../common/Modal";
+import CommonTable from "../common/CommonTable";
+import EmptyState from "../common/EmptyState";
+import MkPill from "../common/MkPill";
+import { mkTileColor } from "../../utils/mkTileColor";
 import {
-  Search,
-  Download,
-  Printer,
-  EyeOff,
-  ChevronDown,
-  ArrowUp,
-  ArrowDown,
-} from "lucide-react";
+  FILTER_SEARCH_WRAP_CLASS,
+  FILTER_SEARCH_ICON_WRAP_CLASS,
+  FILTER_SEARCH_INPUT_CLASS,
+  FILTER_SELECT_CLASS as selectClass,
+  filterChipClass,
+  filterChipBadgeClass,
+  FILTER_ACTION_BTN_CLASS,
+  FILTER_ICON_BTN_CLASS,
+  FILTER_ICON_SIZE,
+} from "../common/filterToolbarStyles";
 
-const CategoryTable = ({ data, title, onEdit, onDelete }) => {
+// Category-relevant health chips, matching the Product page's HEALTH_DEFS
+// pattern — no "All" chip here (status is already covered by the Status
+// select), so a chip toggles on/off by clicking it again.
+const HEALTH_DEFS = [
+  { key: "noimage", label: "Missing image" },
+  { key: "noproducts", label: "No products" },
+];
+
+const CategoryTable = ({
+  data,
+  title,
+  onEdit,
+  onDelete,
+  onAddNew,
+  onView,
+  onViewProducts,
+  onToggleStatus,
+  togglingId,
+  onBulkImportClick,
+  importing,
+}) => {
   const [searchTerm, setSearchTerm] = useState("");
-  const [visibleColumns, setVisibleColumns] = useState({
-    id: true,
-    image: true,
-    name: true,
-    taxPercentage: true,
-    createdAt: true,
-    updatedAt: true,
-    status: true,
-  });
-  const [showColumnToggle, setShowColumnToggle] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [healthFilter, setHealthFilter] = useState(null);
   const [sortField, setSortField] = useState("name");
   const [sortDirection, setSortDirection] = useState("asc");
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
-  const tableRef = useRef(null);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null);
+  const [statusConfirmTarget, setStatusConfirmTarget] = useState(null);
+  const [changingStatus, setChangingStatus] = useState(false);
 
-  // search
+  // Status never flips on the raw click — same confirm-before-mutate pattern
+  // as the Products page's status pill, reusing the existing onToggleStatus
+  // → updateCategory({isActive}) call already wired by the caller.
+  const handleConfirmStatusChange = async () => {
+    if (!statusConfirmTarget) return;
+    setChangingStatus(true);
+    await onToggleStatus?.(statusConfirmTarget, statusConfirmTarget.status !== "active");
+    setChangingStatus(false);
+    setStatusConfirmTarget(null);
+  };
+
+  // Real, cross-referenced category data — `image` comes straight off the
+  // category record, `productsCount` is cross-referenced from live products
+  // (see Category.jsx's productCountByCategory), so both counts below reflect
+  // actual data, not placeholders.
+  const healthCount = (key) => {
+    if (key === "noimage") return data.filter((item) => !item.image).length;
+    if (key === "noproducts") return data.filter((item) => (item.productsCount ?? 0) === 0).length;
+    return 0;
+  };
+
   const filteredData = data.filter((item) => {
+    if (statusFilter !== "all" && item.status !== statusFilter) return false;
+    if (healthFilter === "noimage" && item.image) return false;
+    if (healthFilter === "noproducts" && (item.productsCount ?? 0) !== 0) return false;
     if (!searchTerm) return true;
     return ["name", "status"].some((key) =>
       item[key]?.toString().toLowerCase().includes(searchTerm.toLowerCase()),
     );
   });
 
-  // sort
   const sortedData = [...filteredData].sort((a, b) => {
     const av = a[sortField] ?? "";
     const bv = b[sortField] ?? "";
@@ -45,15 +95,9 @@ const CategoryTable = ({ data, title, onEdit, onDelete }) => {
     return 0;
   });
 
-  // pagination
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = sortedData.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(sortedData.length / itemsPerPage) || 1;
-
-  const toggleColumn = (column) => {
-    setVisibleColumns((prev) => ({ ...prev, [column]: !prev[column] }));
-  };
 
   const handleSort = (field) => {
     if (sortField === field) {
@@ -64,18 +108,11 @@ const CategoryTable = ({ data, title, onEdit, onDelete }) => {
     }
   };
 
-  const getSortIcon = (field) => {
-    if (sortField !== field) return null;
-    return sortDirection === "asc" ? (
-      <ArrowUp size={14} className="ml-1" />
-    ) : (
-      <ArrowDown size={14} className="ml-1" />
-    );
-  };
+  const imageUrl = (image) =>
+    `${import.meta.env.VITE_API_BASE_URL}/admin/images/${image}`;
 
-  // CSV export (extra fields included)
   const handleDownloadCSV = () => {
-    const cols = Object.keys(visibleColumns).filter((c) => visibleColumns[c]);
+    const cols = ["name", "createdAt", "updatedAt", "status"];
     const headers = cols
       .map((c) => c.charAt(0).toUpperCase() + c.slice(1))
       .join(",");
@@ -98,334 +135,322 @@ const CategoryTable = ({ data, title, onEdit, onDelete }) => {
     document.body.removeChild(a);
   };
 
-  // Print (extra fields included)
-  const handlePrint = () => {
-    const cols = Object.keys(visibleColumns).filter((c) => visibleColumns[c]);
-    let html = "<html><head><title>Print</title>";
-    html +=
-      "<style>table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f2f2f2}</style></head><body>";
-    html += `<h2>${title}</h2><table><thead><tr>`;
-    cols.forEach((c) => {
-      html += `<th>${c.charAt(0).toUpperCase() + c.slice(1)}</th>`;
-    });
-    html += "</tr></thead><tbody>";
-    sortedData.forEach((item) => {
-      html += "<tr>";
-      cols.forEach((c) => {
-        html += `<td>${item[c] ?? ""}</td>`;
-      });
-      html += "</tr>";
-    });
-    html += "</tbody></table></body></html>";
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    await onDelete(deleteTarget.id);
+    setIsDeleting(false);
+    setDeleteTarget(null);
+  };
 
-    const frame = document.createElement("iframe");
-    frame.style.position = "absolute";
-    frame.style.top = "-999px";
-    document.body.appendChild(frame);
-    frame.contentDocument.write(html);
-    frame.contentDocument.close();
-    setTimeout(() => {
-      frame.contentWindow.print();
-      document.body.removeChild(frame);
-    }, 300);
+  const handleDeleteClick = (item) => {
+    if ((item.productsCount ?? 0) > 0) {
+      toast.error(
+        `Cannot delete "${item.name}" — ${item.productsCount} product${item.productsCount > 1 ? "s are" : " is"} still assigned. Reassign them first.`,
+      );
+      return;
+    }
+    setDeleteTarget(item);
   };
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm]);
+  }, [searchTerm, statusFilter, healthFilter]);
 
-  useEffect(() => {
-    const handler = (e) => {
-      if (
-        showColumnToggle &&
-        !e.target.closest(".column-toggle-container") &&
-        !e.target.closest(".column-toggle-button")
-      ) {
-        setShowColumnToggle(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showColumnToggle]);
+  const columns = [
+    {
+      key: "name",
+      header: "Category",
+      sortable: true,
+      width: "320px",
+      render: (item) => {
+        const initial = (item?.name || "?").charAt(0).toUpperCase();
+        const tileColor = mkTileColor(item?.id ?? item?.name);
+        // Reference design always shows the deterministic colored-letter
+        // tile in the row (never the real image thumbnail) — but if a real
+        // image exists, the tile stays clickable and still opens the same
+        // full preview modal, so nothing about viewing the image is lost.
+        const tile = (
+          <div
+            className="w-[38px] h-[38px] rounded-[8px] flex items-center justify-center text-white text-[13px] font-semibold shrink-0"
+            style={{ background: tileColor }}
+          >
+            {initial}
+          </div>
+        );
+        return (
+          <div className="flex items-center gap-3 min-w-0">
+            {item?.image ? (
+              <button
+                type="button"
+                onClick={() => setPreviewImage({ src: imageUrl(item.image), name: item.name })}
+                aria-label={`Preview ${item.name} image`}
+                className="shrink-0 rounded-[8px] ring-1 ring-transparent hover:ring-2 hover:ring-[var(--brand-purple)]/40 transition-all cursor-pointer"
+              >
+                {tile}
+              </button>
+            ) : (
+              tile
+            )}
+            <div className="min-w-0">
+              <p className="text-[13.5px] font-semibold text-[var(--mk-ink-900)] leading-[1.15] !mb-0 truncate max-w-[240px]" title={item.name}>
+                {item.name}
+              </p>
+              <p className="text-[12px] text-[var(--mk-ink-400)] leading-[1.3] !mt-[2px] !mb-0">Added {item.updatedAt}</p>
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      key: "productsCount",
+      header: "Products",
+      width: "90px",
+      align: "right",
+      className: "text-[var(--mk-ink-700)] tabular-nums",
+      render: (item) => item.productsCount ?? 0,
+    },
+    {
+      key: "updatedAt",
+      header: "Added",
+      sortable: true,
+      width: "130px",
+      className: "text-[var(--mk-ink-500)]",
+    },
+    {
+      key: "status",
+      header: "Status",
+      sortable: true,
+      width: "100px",
+      render: (item) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setStatusConfirmTarget(item);
+          }}
+          disabled={togglingId === item.id}
+          className="cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {item.status === "active" ? (
+            <MkPill label="Active" tone="ok" size="sm" />
+          ) : (
+            <MkPill label="Inactive" tone="mut" size="sm" />
+          )}
+        </button>
+      ),
+    },
+  ];
+
+  if (data.length === 0) {
+    return (
+      <div className="py-6">
+        <EmptyState
+          icon={FolderTree}
+          title="No Categories Found"
+          description="Create your first category to start organizing products."
+        />
+        {onAddNew && (
+          <div className="flex justify-center pb-4">
+            <button
+              type="button"
+              onClick={onAddNew}
+              className="inline-flex items-center gap-2 px-4 py-2.5 h-12 rounded-xl text-[14px] font-semibold text-white bg-[var(--mk-primary)] hover:bg-[var(--mk-primary-hover)] shadow-sm active:scale-[0.98] transition-all duration-200 cursor-pointer"
+            >
+              <Plus size={16} />
+              Add Category
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>
-      {/* Top bar */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center p-4 border-b border-gray-200">
-        <div className="relative w-full md:w-64 mb-4 md:mb-0">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search size={16} className="text-gray-400" />
+      <div className="flex items-center gap-1 p-4 overflow-x-auto border-b border-[var(--mk-line)]">
+        <div className={FILTER_SEARCH_WRAP_CLASS}>
+          <div className={FILTER_SEARCH_ICON_WRAP_CLASS}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[var(--mk-ink-400)]">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
           </div>
           <input
             type="text"
-            placeholder="Search by name or status..."
+            placeholder="Search categories..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+            className={FILTER_SEARCH_INPUT_CLASS}
           />
         </div>
 
-        <div className="flex space-x-2">
-          <button
-            style={{ cursor: "pointer" }}
-            onClick={handleDownloadCSV}
-            className="flex items-center px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
-          >
-            <Download size={16} className="mr-1" />
-            <span className="text-sm">Export</span>
-          </button>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className={`${selectClass} shrink-0`}
+          aria-label="Filter by status"
+        >
+          <option value="all">All statuses</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
 
-          <button
-            style={{ cursor: "pointer" }}
-            onClick={handlePrint}
-            className="flex items-center px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
-          >
-            <Printer size={16} className="mr-1" />
-            <span className="text-sm">Print</span>
-          </button>
+        <div className="flex-1 shrink min-w-2" />
 
-          <div className="relative column-toggle-container">
+        <div className="flex items-center gap-1 shrink-0">
+          {HEALTH_DEFS.map((d) => (
             <button
-              style={{ cursor: "pointer" }}
-              onClick={() => setShowColumnToggle((p) => !p)}
-              className="column-toggle-button flex items-center px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
+              key={d.key}
+              type="button"
+              onClick={() => setHealthFilter((prev) => (prev === d.key ? null : d.key))}
+              className={filterChipClass(healthFilter === d.key)}
             >
-              <EyeOff size={16} className="mr-1" />
-              <span className="text-sm">Columns</span>
-              <ChevronDown size={16} className="ml-1" />
+              {d.label}
+              <span className={filterChipBadgeClass(healthFilter === d.key)}>
+                {healthCount(d.key)}
+              </span>
             </button>
-
-            {showColumnToggle && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-10 border border-gray-200">
-                <div className="p-2">
-                  <h4 className="text-sm font-medium text-gray-700 mb-2">
-                    Toggle Columns
-                  </h4>
-                  <div className="space-y-1">
-                    {Object.keys(visibleColumns).map((column) => (
-                      <label
-                        key={column}
-                        className="flex items-center text-sm capitalize"
-                      >
-                        <input
-                          style={{ cursor: "pointer" }}
-                          type="checkbox"
-                          checked={visibleColumns[column]}
-                          onChange={() => toggleColumn(column)}
-                          className="mr-2"
-                        />
-                        {column === "taxPercentage"
-                          ? "Tax"
-                          : column === "createdAt"
-                            ? "Created"
-                            : column === "updatedAt"
-                              ? "Updated"
-                              : column}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          ))}
         </div>
-      </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full" ref={tableRef}>
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {visibleColumns.id && (
-                <th
-                  onClick={() => handleSort("id")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                >
-                  SNo {getSortIcon("id")}
-                </th>
-              )}
-              {visibleColumns.image && (
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Image
-                </th>
-              )}
-              {visibleColumns.name && (
-                <th
-                  onClick={() => handleSort("name")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                >
-                  Name {getSortIcon("name")}
-                </th>
-              )}
-              {visibleColumns.taxPercentage && (
-                <th
-                  onClick={() => handleSort("taxPercentage")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                >
-                  Tax {getSortIcon("taxPercentage")}
-                </th>
-              )}
-              {visibleColumns.createdAt && (
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Created
-                </th>
-              )}
-              {visibleColumns.updatedAt && (
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Updated
-                </th>
-              )}
-              {visibleColumns.status && (
-                <th
-                  onClick={() => handleSort("status")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                >
-                  Status {getSortIcon("status")}
-                </th>
-              )}
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
-            </tr>
-          </thead>
-
-          <tbody className="bg-white divide-y divide-gray-200">
-            {currentItems.length > 0 ? (
-              currentItems.map((item, index) => (
-                <tr key={item?.id}>
-                  {visibleColumns.id && (
-                    <td className="px-6 py-4 capitalize">
-                      {indexOfFirstItem + index + 1}
-                    </td>
-                  )}
-
-                  {visibleColumns.image && (
-                    <td className="px-6 py-4">
-                      {item?.image ? (
-                        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden">
-                          <img
-                            src={`${import.meta.env.VITE_API_BASE_URL}/profilepic/${item?.image}`}
-                            alt={`category-image-${item.id}`}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                      ) : (
-                        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-gray-200 flex items-center justify-center text-gray-500">
-                          No Image
-                        </div>
-                      )}
-                    </td>
-                  )}
-
-                  {visibleColumns.name && (
-                    <td className="px-6 py-4 capitalize">{item?.name}</td>
-                  )}
-
-                  {visibleColumns.taxPercentage && (
-                    <td className="px-6 py-4">{item?.taxPercentage ?? 0}%</td>
-                  )}
-
-                  {visibleColumns.createdAt && (
-                    <td className="px-6 py-4 text-xs text-gray-500">
-                      {item?.createdAt}
-                    </td>
-                  )}
-
-                  {visibleColumns.updatedAt && (
-                    <td className="px-6 py-4 text-xs text-gray-500">
-                      {item?.updatedAt}
-                    </td>
-                  )}
-
-                  {visibleColumns.status && (
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span
-                        className={`px-3 inline-flex text-xs leading-5 font-semibold rounded capitalize ${
-                          item?.status === "active"
-                            ? "bg-green-100 text-green-800"
-                            : "bg-red-100 text-red-800"
-                        }`}
-                      >
-                        {item?.status}
-                      </span>
-                    </td>
-                  )}
-
-                  <td className="px-6 py-4 text-right">
-                    <button
-                      style={{ cursor: "pointer" }}
-                      onClick={() => onEdit(item)}
-                      className="text-indigo-600 hover:text-indigo-900 mr-2"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      style={{ cursor: "pointer" }}
-                      onClick={() => onDelete(item?.id)}
-                      className="text-red-600 hover:text-red-900"
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td
-                  colSpan="8"
-                  className="px-6 py-4 text-center text-sm text-gray-500"
-                >
-                  No {(title || "items").toLowerCase()} found
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Pagination */}
-      <div className="border-t border-gray-200 px-4 py-3 flex items-center justify-between">
-        <p className="text-sm text-gray-700">
-          Showing{" "}
-          <span className="font-medium">
-            {currentItems.length > 0 ? indexOfFirstItem + 1 : 0}
-          </span>{" "}
-          to{" "}
-          <span className="font-medium">
-            {Math.min(indexOfLastItem, sortedData.length)}
-          </span>{" "}
-          of <span className="font-medium">{sortedData.length}</span> results
-        </p>
-        <div className="flex">
+        {/* Relocated from the page header's removed "..." menu — same
+            underlying import feature, just a compact icon button here
+            instead, matching Export's treatment. */}
+        {onBulkImportClick && (
           <button
-            onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-            disabled={currentPage === 1}
-            className={`px-3 py-1 text-sm rounded-l-md ${
-              currentPage === 1
-                ? "text-gray-300 cursor-not-allowed"
-                : "text-gray-600 hover:bg-gray-100"
-            }`}
+            type="button"
+            onClick={onBulkImportClick}
+            disabled={importing}
+            aria-label={importing ? "Importing categories..." : "Bulk import categories"}
+            title={importing ? "Importing..." : "Bulk import"}
+            className={`${FILTER_ICON_BTN_CLASS} disabled:opacity-60 disabled:cursor-not-allowed`}
           >
-            Prev
+            <Upload size={FILTER_ICON_SIZE} />
           </button>
-          <span className="px-4 py-1 text-sm text-gray-700">
-            {currentPage} / {totalPages}
+        )}
+
+        <button
+          type="button"
+          onClick={handleDownloadCSV}
+          className={FILTER_ACTION_BTN_CLASS}
+        >
+          <Download size={14} />
+          Export
+        </button>
+      </div>
+
+      <CommonTable
+        columns={columns}
+        data={currentItems}
+        sortField={sortField}
+        sortDirection={sortDirection}
+        onSort={handleSort}
+        emptyMessage={`No ${(title || "items").toLowerCase()} match your search`}
+        minWidth="740px"
+        headerBgClass="bg-[#FAFBFD]"
+        headerTextClass="text-[10.5px] font-semibold text-[var(--mk-ink-400)] tracking-[0.08em]"
+        headerHeightClass="h-[38px]"
+        rowPaddingY="py-[12px]"
+        zebra={false}
+        onRowClick={onView}
+        renderRowActions={(item) => (
+          <>
+            <IconButton
+              icon={Eye}
+              label="View products"
+              tone="flat"
+              size={17}
+              onClick={() => onViewProducts?.(item)}
+            />
+            <IconButton
+              icon={Pencil}
+              label="Edit"
+              tone="flat"
+              size={17}
+              onClick={() => onEdit(item)}
+            />
+            <IconButton
+              icon={Archive}
+              label="Delete"
+              size={17}
+              tone="flatDanger"
+              onClick={() => handleDeleteClick(item)}
+            />
+          </>
+        )}
+      />
+
+      <Pagination
+        currentPage={currentPage}
+        totalItems={sortedData.length}
+        itemsPerPage={itemsPerPage}
+        onPageChange={setCurrentPage}
+        onItemsPerPageChange={(value) => {
+          setItemsPerPage(value);
+          setCurrentPage(1);
+        }}
+      />
+
+      <DeleteConfirmationModal
+        isOpen={!!deleteTarget}
+        title="Delete Category?"
+        itemName={deleteTarget?.name}
+        loading={isDeleting}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+      />
+
+      <Modal
+        open={!!previewImage}
+        onClose={() => setPreviewImage(null)}
+        title={previewImage?.name || "Image preview"}
+        maxWidth="max-w-xl"
+      >
+        {previewImage && (
+          <img
+            src={previewImage.src}
+            alt={previewImage.name || "preview"}
+            className="w-full max-h-[70vh] object-contain rounded-xl"
+          />
+        )}
+      </Modal>
+
+      {/* STATUS CHANGE CONFIRMATION — same pattern as Products: status never
+          flips on the raw click, the real onToggleStatus call only fires
+          after Confirm. */}
+      <Modal
+        open={!!statusConfirmTarget}
+        onClose={() => setStatusConfirmTarget(null)}
+        title={statusConfirmTarget?.status === "active" ? "Mark as Inactive" : "Mark as Active"}
+        maxWidth="max-w-sm"
+      >
+        <p className="text-[13.5px] text-[var(--mk-ink-700)] px-1 pb-1">
+          Are you sure you want to change this category to{" "}
+          <span className="font-semibold text-[var(--mk-ink-900)]">
+            {statusConfirmTarget?.status === "active" ? "Inactive" : "Active"}
           </span>
+          ?
+        </p>
+        <div className="flex justify-end gap-2.5 px-1 pt-4">
           <button
-            onClick={() =>
-              setCurrentPage((prev) => Math.min(prev + 1, totalPages))
-            }
-            disabled={currentPage === totalPages}
-            className={`px-3 py-1 text-sm rounded-r-md ${
-              currentPage === totalPages
-                ? "text-gray-300 cursor-not-allowed"
-                : "text-gray-600 hover:bg-gray-100"
-            }`}
+            type="button"
+            onClick={() => setStatusConfirmTarget(null)}
+            disabled={changingStatus}
+            className="px-4 py-2.5 rounded-lg text-[13px] font-semibold text-[var(--mk-ink-700)] border border-[var(--mk-line)] bg-white hover:bg-gray-50 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            Next
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirmStatusChange}
+            disabled={changingStatus}
+            className="px-4 py-2.5 rounded-lg text-[13px] font-semibold text-white bg-[var(--mk-primary)] hover:bg-[var(--mk-primary-hover)] transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {changingStatus ? "Saving..." : "Confirm"}
           </button>
         </div>
-      </div>
+      </Modal>
     </div>
   );
 };

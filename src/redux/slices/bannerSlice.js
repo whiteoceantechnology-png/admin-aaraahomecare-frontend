@@ -1,20 +1,17 @@
-
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import api from "../../utils/api";
-
-
+import {
+  fetchActiveBanners,
+  createBanner,
+  editBanner,
+  removeBanner,
+} from "./bannerApi";
 
 // get Active Banner
 export const getActiveBannerList = createAsyncThunk(
   "activeBanner/getActiveBannerList",
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/app/getactivebanner", {},{
-        headers: {
-          "Content-Type": "application/json", // optional in GET, but included here per request
-        },
-        withCredentials: false,
-      });
+      const response = await fetchActiveBanners();
       return response.data.data;
     } catch (error) {
       const message =
@@ -31,9 +28,7 @@ export const addBanner = createAsyncThunk(
   "activeBanner/addBanner",
   async (formDataToSend, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/app/addbanner", formDataToSend, {
-          withCredentials: false,
-      });
+      const response = await createBanner(formDataToSend);
       return response.data.data;
     } catch (error) {
       const message =
@@ -45,17 +40,29 @@ export const addBanner = createAsyncThunk(
   }
 );
 
+// update banner
+export const updateBanner = createAsyncThunk(
+  "activeBanner/updateBanner",
+  async (formDataToSend, { rejectWithValue }) => {
+    try {
+      const response = await editBanner(formDataToSend);
+      return response.data.data;
+    } catch (error) {
+      const message =
+        error.response?.data?.error?.message ||
+        error.message ||
+        "Failed to update banner";
+      return rejectWithValue(message);
+    }
+  }
+);
+
 // delete banner
 export const deleteBanner = createAsyncThunk(
   "activeBanner/deleteBanner",
   async (id, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/app/deletebanner", id,{
-        headers: {
-          "Content-Type": "application/json", // optional in GET, but included here per request
-        },
-        withCredentials: false,
-      });
+      const response = await removeBanner(id);
       return response.data.data;
     } catch (error) {
       const message =
@@ -110,11 +117,24 @@ const allActiveBannersSlice = createSlice({
       })
       .addCase(addBanner.fulfilled, (state, action) => {
         state.loading = false;
-        
+
       })
       .addCase(addBanner.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload || "Failed to add banner";
+      })
+
+      // update banner
+      .addCase(updateBanner.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(updateBanner.fulfilled, (state) => {
+        state.loading = false;
+      })
+      .addCase(updateBanner.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload || "Failed to update banner";
       })
 
     // delete banner
@@ -124,14 +144,14 @@ const allActiveBannersSlice = createSlice({
       })
       .addCase(deleteBanner.fulfilled, (state, action) => {
         state.loading = false;
-                
+
       })
       .addCase(deleteBanner.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload || "Failed to delete banner";
       });
 
-          
+
   },
 });
 

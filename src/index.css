@@ -1,13 +1,69 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: "Poppins", ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+html,
+body,
+#root,
+button,
+input,
+textarea,
+select,
+table,
+th,
+td {
+  font-family: "Poppins", ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+html, body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-weight: 500;
+}
+
 :root{
-    --color-primary: #2b7fff;
+    /* Brand palette — sampled directly from the Aaraa Homecare logo mark */
+    --brand-purple: #493a78;
+    --brand-purple-dark: #362c59;
+    --brand-purple-light: #6c5aa8;
+    --brand-gold: #e5a93e;
+    --brand-gold-light: #f2c767;
+    --brand-gold-dark: #c98a22;
+
+    --color-primary: var(--brand-purple);
     --color-secondary: #d53731;
+
+  /* Surfaces & ink (dashboard palette) */
+  /* Matches aaraa-admin-redesign.html's --bg:#F3F5FA exactly (same value as --mk-bg below). */
+  --surface-page: #f3f5fa;
+  --surface-card: #ffffff;
+  --border-hairline: rgba(11, 11, 11, 0.08);
+  --text-primary: #0f172a;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+
+  /* Semantic accents (KPI / status colors) */
+  --accent-blue: #2a78d6;
+  --accent-violet: var(--brand-purple);
+  --accent-aqua: #1baf7a;
+  --accent-orange: #eb6834;
+  --accent-good: #0ca30c;
+  --accent-warning: var(--brand-gold);
+  --accent-critical: #d03b3b;
+
+  /* Sidebar (light, on-brand) */
+  --sidebar-bg: #ffffff;
+  --sidebar-border: rgba(73, 58, 120, 0.1);
 
   /* Shadows */
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-card: 0 1px 3px 0 rgba(15, 23, 42, 0.06), 0 1px 2px -1px rgba(15, 23, 42, 0.06);
+  --shadow-card-hover: 0 12px 24px -8px rgba(15, 23, 42, 0.16), 0 4px 8px -4px rgba(15, 23, 42, 0.08);
 
   /* Spacing */
   --space-1: 0.25rem;
@@ -33,6 +89,126 @@
   --transition-normal: 300ms;
   --transition-slow: 500ms;
   --transition-ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Mockup tokens — used verbatim on Product/Category/Inventory list pages
+     to match the approved redesign (aaraa-admin-redesign.html) exactly. */
+  --mk-primary: #43389b;
+  --mk-primary-hover: #372e86;
+  --mk-primary-50: #eceaf9;
+  --mk-primary-ring: rgba(67, 56, 155, 0.22);
+  --mk-ink-900: #1a2233;
+  --mk-ink-700: #3d4756;
+  --mk-ink-500: #66707f;
+  --mk-ink-400: #8a94a6;
+  --mk-line: #e5e9f0;
+  --mk-bg: #f3f5fa;
+  --mk-ok: #0e8a4f;
+  --mk-ok-bg: #e3f4ea;
+  --mk-warn: #b14e0b;
+  --mk-warn-bg: #fbeedf;
+  --mk-dgr: #c0392b;
+  --mk-dgr-bg: #fbe9e7;
+  --mk-info: #2563eb;
+  --mk-info-bg: #e8effd;
+}
+
+/* ---------------------------------------------------------------- */
+/* Shared premium-dashboard utilities                                */
+/* ---------------------------------------------------------------- */
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: -400px 0;
+  }
+  to {
+    background-position: 400px 0;
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp var(--transition-slow) var(--transition-ease) both;
+}
+
+@keyframes modalBackdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modalPanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-modal-backdrop {
+  animation: modalBackdropIn var(--transition-normal) var(--transition-ease) both;
+}
+
+.animate-modal-panel {
+  animation: modalPanelIn var(--transition-normal) cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes drawerPanelIn {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-drawer-panel {
+  animation: drawerPanelIn var(--transition-normal) cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #eef0f3 25%, #f7f8fa 37%, #eef0f3 63%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+/* Compact typography for all data tables app-wide */
+table {
+  font-size: 0.8125rem; /* 13px */
+}
+table td {
+  font-size: 0.8125rem;
+}
+
+/* Slim, unobtrusive scrollbar for the sidebar nav */
+.sidebar-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(73, 58, 120, 0.18);
+  border-radius: 9999px;
+}
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(73, 58, 120, 0.18) transparent;
 }
 
 
@@ -60,4 +236,162 @@
 .custom-datepicker .react-datepicker__day--in-range {
   background-color: #000000 !important;
   color: white !important;
+}
+
+/* Order Invoice — on-screen "page preview" look inside the modal: each
+   .invoice-sheet is one A4-proportioned white page (fixed width, faint
+   shadow, gap between pages) so the preview already reads as a paginated
+   document, not just a scrolling div. Print rules below strip all of that
+   back down to the physical page. */
+.invoice-sheet {
+  width: 794px;
+  max-width: 100%;
+  margin: 0 auto 24px;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.12), 0 1px 2px rgba(16, 24, 40, 0.08);
+}
+.invoice-border {
+  position: relative;
+  border: 1.5px solid #1a1a1a;
+  min-height: 1000px;
+}
+.invoice-page-number {
+  position: absolute;
+  right: 16px;
+  bottom: 10px;
+  font-size: 10px;
+  color: #6b7280;
+}
+.invoice-items-table thead {
+  display: table-header-group;
+}
+.invoice-row {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+/* #invoice-print-area is portaled directly onto <body> by InvoiceModal.jsx
+   (see that file's header comment) — hidden on screen, since the visible
+   preview is a second, non-portaled OrderInvoice rendered normally inside
+   the modal. */
+#invoice-print-area {
+  display: none;
+}
+
+/* Isolated print for the Order Invoice / Packing Slip — only
+   #invoice-print-area or #packing-slip-print-area (and descendants) render
+   when printing/saving as PDF; everything else on the page (sidebar, modal
+   chrome, backdrop) is hidden. .no-print is a small escape hatch for
+   controls (e.g. the "Print" button itself) that must show on screen but
+   never in the printed output. */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+  #packing-slip-print-area,
+  #packing-slip-print-area * {
+    visibility: visible;
+  }
+  #packing-slip-print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    padding: 16px;
+  }
+
+  /* The invoice uses a different isolation strategy from the packing slip
+     above: CSS page fragmentation (break-before/-inside, repeating table
+     headers) only works on content in normal document flow, which
+     `position: absolute` (the packing slip's approach) opts out of — fine
+     for a single-page slip, but it silently breaks multi-page pagination
+     for the invoice. So instead, the whole visible app (#root) is removed
+     from flow with `display: none`, and the body-level invoice portal
+     (already in normal flow, already outside any transformed/positioned
+     ancestor) is the only thing left to paginate. Scoped with :has() so
+     this never fires while printing the packing slip instead, which has no
+     such portal present. */
+  body:has(#invoice-print-area) #root {
+    display: none !important;
+  }
+  #invoice-print-area,
+  #invoice-print-area * {
+    visibility: visible;
+  }
+  #invoice-print-area {
+    display: block !important;
+  }
+  /* Undo the on-screen "page card" look — printing already IS the page, so
+     no shadow/gap/min-height is needed; the browser's own pagination takes
+     over from here, breaking wherever .invoice-page-break or a natural
+     table overflow says to. */
+  .invoice-sheet {
+    width: auto;
+    max-width: none;
+    margin: 0;
+    box-shadow: none;
+  }
+  .invoice-border {
+    border: 1.5px solid #1a1a1a;
+    min-height: 0;
+  }
+  .invoice-page-break {
+    break-before: page;
+    page-break-before: always;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* Rich text editor content (Description field's Tiptap editor) — Bootstrap's
+   unlayered resets on bare p/ul/ol/li/a elements otherwise strip list
+   markers, paragraph spacing and link color here (same collision documented
+   for .custom-datepicker above), so these are forced with !important. */
+.rte-content {
+  outline: none !important;
+}
+.rte-content p {
+  margin: 0 0 0.75em !important;
+}
+.rte-content p:last-child {
+  margin-bottom: 0 !important;
+}
+.rte-content ul {
+  list-style: disc !important;
+  padding-left: 1.5em !important;
+  margin: 0 0 0.75em !important;
+}
+.rte-content ol {
+  list-style: decimal !important;
+  padding-left: 1.5em !important;
+  margin: 0 0 0.75em !important;
+}
+.rte-content li {
+  margin: 0.15em 0 !important;
+}
+.rte-content a {
+  color: var(--mk-primary) !important;
+  text-decoration: underline !important;
+}
+.rte-content img {
+  max-width: 100% !important;
+  height: auto !important;
+  border-radius: 8px !important;
+  margin: 0.5em 0 !important;
+}
+.rte-content strong {
+  font-weight: 700 !important;
+}
+.rte-content em {
+  font-style: italic !important;
+}
+.rte-content u {
+  text-decoration: underline !important;
 }

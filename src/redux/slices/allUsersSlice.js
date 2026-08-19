@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import api from "../../utils/api";
+import { fetchAllUsers, fetchUserDetail, editUserStatus } from "./allUsersApi";
 
 
 
@@ -8,12 +8,7 @@ export const getAllUsersList = createAsyncThunk(
   "allUsers/getAllUsersList",
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/app/getallusers", {},{
-        headers: {
-          "Content-Type": "application/json", // optional in GET, but included here per request
-        },
-        withCredentials: false,
-      });
+      const response = await fetchAllUsers();
       return response.data.data;
     } catch (error) {
       const message =
@@ -30,12 +25,7 @@ export const getUserDetail = createAsyncThunk(
   "allUsers/getUserDetail",
     async (id, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/app/getalluserdeatils", id,{
-        headers: {
-          "Content-Type": "application/json", // optional in GET, but included here per request
-        },
-        withCredentials: false,
-      });
+      const response = await fetchUserDetail(id);
       return response.data.data;
     } catch (error) {
       const message =
@@ -52,12 +42,7 @@ export const updateUserStatus = createAsyncThunk(
   "allUsers/updateUserStatus",
   async ({ id, status }, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/app/updateuser", { id, status }, {
-        headers: {
-          "Content-Type": "application/json",
-        },
-        withCredentials: false,
-      });
+      const response = await editUserStatus({ id, status });
       return response.data.data;
     } catch (error) {
       const message =

@@ -1,658 +1,215 @@
-import { useState, useRef, useEffect, act } from "react";
-import {
-  Search,
-  Download,
-  Printer,
-  EyeOff,
-  ChevronDown,
-  Edit,
-  Trash2,
-  Filter,
-  ArrowUp,
-  ArrowDown,
-  X,
-} from "lucide-react";
-
-import moment from "moment";
+import { useState, useEffect } from "react";
+import { Download, Printer, Eye, SquarePen, Trash2 } from "lucide-react";
+import DeleteConfirmationModal from "../details/DeleteConfirmationModal";
+import Pagination from "../common/Pagination";
+import IconButton from "../common/IconButton";
+import Modal from "../common/Modal";
+import CommonTable from "../common/CommonTable";
+import TableToolbar from "../common/TableToolbar";
+import ImageCell from "../common/ImageCell";
+import StatusBadge from "../common/StatusBadge";
 
 const baseUrl = import.meta.env.VITE_API_BASE_URL;
 
-const BannerTable = ({ data, title, onEdit, onDelete }) => {
-  // Original state
+const BannerTable = ({ data = [], title = "Banners", onEdit, onDelete }) => {
   const [searchTerm, setSearchTerm] = useState("");
-  const [visibleColumns, setVisibleColumns] = useState({
-    id: true,
-    image: true,
-    name: true,
-    email: true,
-    phone: true,
-    date: true,
-    status: true,
-         
-  });
-  const [showColumnToggle, setShowColumnToggle] = useState(false);
-  const [sortField, setSortField] = useState("name");
-  const [sortDirection, setSortDirection] = useState("asc");
-
-  // New state for filters, pagination, and filter dropdown
-  const [showFilters, setShowFilters] = useState(false);
-  const [filters, setFilters] = useState({
-    department: "",
-  });
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10); // Show 5 items per page
-  const tableRef = useRef(null);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null);
 
-  // Get unique departments and statuses for filter dropdowns
-
-  // Filter data based on search term AND filters
   const filteredData = data.filter((item) => {
-    const matchesSearch = Object.keys(visibleColumns).some(
-      (key) =>
-        visibleColumns[key] &&
-        item[key]?.toString().toLowerCase().includes(searchTerm.toLowerCase())
-    );
-
-    const matchesDepartmentFilter =
-      !filters.department || item.department === filters.department;
-
-    return matchesSearch && matchesDepartmentFilter;
+    if (!searchTerm) return true;
+    return [item?.type, item?.status]
+      .filter(Boolean)
+      .some((v) => v.toString().toLowerCase().includes(searchTerm.toLowerCase()));
   });
 
-  // Sort data based on sort field and direction
-  const sortedData = [...filteredData].sort((a, b) => {
-    if (a[sortField] < b[sortField]) {
-      return sortDirection === "asc" ? -1 : 1;
-    }
-    if (a[sortField] > b[sortField]) {
-      return sortDirection === "asc" ? 1 : -1;
-    }
-    return 0;
-  });
-
-  // Get current page data for pagination
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = sortedData.slice(indexOfFirstItem, indexOfLastItem);
+  const currentItems = filteredData.slice(indexOfFirstItem, indexOfLastItem);
 
-  // Calculate total pages
-  const totalPages = Math.ceil(sortedData.length / itemsPerPage);
+  const imageUrl = (image) => `${baseUrl}/profilepic/${image}`;
 
-  // Generate array of page numbers
-  const pageNumbers = [];
-  for (let i = 1; i <= totalPages; i++) {
-    pageNumbers.push(i);
-  }
-
-  // Toggle column visibility
-  const toggleColumn = (column) => {
-    setVisibleColumns((prev) => ({
-      ...prev,
-      [column]: !prev[column],
-    }));
-  };
-
-  // Handle sorting
-  const handleSort = (field) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-    } else {
-      setSortField(field);
-      setSortDirection("asc");
-    }
-  };
-
-  // Handle CSV download (real implementation)
   const handleDownloadCSV = () => {
-    // Get visible columns to include in CSV
-    const headers = Object.keys(visibleColumns)
-      .filter((key) => visibleColumns[key])
-      .map((key) => key.charAt(0).toUpperCase() + key.slice(1));
+    const headers = "Image,Status\r\n";
+    let csv = headers;
 
-    // Create CSV content
-    let csvContent = headers.join(",") + "\r\n";
-
-    sortedData.forEach((item) => {
-      const row = Object.keys(visibleColumns)
-        .filter((key) => visibleColumns[key])
-        .map((key) => {
-          // Escape commas and quotes in values
-          const value = item[key].toString();
-          return `"${value.replace(/"/g, '""')}"`;
-        })
+    filteredData.forEach((item) => {
+      const row = [item.image, item.status]
+        .map((v) => `"${(v ?? "").toString().replace(/"/g, '""')}"`)
         .join(",");
-
-      csvContent += row + "\r\n";
+      csv += row + "\r\n";
     });
 
-    // Create blob and download link
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-
-    // Set up download attributes
-    link.setAttribute("href", url);
-    link.setAttribute("download", `${title.toLowerCase()}_data.csv`);
-    link.style.visibility = "hidden";
-
-    // Add to document, trigger click, and clean up
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${title.toLowerCase()}_data.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
-  // Handle print (real implementation)
   const handlePrint = () => {
-    // Store original body content
-    const originalContent = document.body.innerHTML;
-
-    // Create a print-friendly version of the table
-    let printContent = "<html><head><title>Print</title>";
-    printContent += "<style>";
-    printContent += "table { border-collapse: collapse; width: 100%; }";
-    printContent +=
-      "th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }";
-    printContent += "th { background-color: #f2f2f2; }";
-    printContent += "</style></head><body>";
-    printContent += `<h2>${title}</h2>`;
-    printContent += "<table>";
-
-    // Add table headers
-    printContent += "<thead><tr>";
-    Object.keys(visibleColumns).forEach((column) => {
-      if (visibleColumns[column]) {
-        printContent += `<th>${
-          column.charAt(0).toUpperCase() + column.slice(1)
-        }</th>`;
-      }
+    let html = "<html><head><title>Print</title>";
+    html +=
+      "<style>table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f2f2f2}</style></head><body>";
+    html += `<h2>${title}</h2><table><thead><tr><th>Image</th><th>Status</th></tr></thead><tbody>`;
+    filteredData.forEach((item) => {
+      html += `<tr><td>${item.image ?? ""}</td><td>${item.status ?? ""}</td></tr>`;
     });
-    printContent += "</tr></thead><tbody>";
+    html += "</tbody></table></body></html>";
 
-    // Add table rows
-    sortedData.forEach((item) => {
-      printContent += "<tr>";
-      Object.keys(visibleColumns).forEach((column) => {
-        if (visibleColumns[column]) {
-          if (column === "status") {
-            printContent += `<td><span>${item[column]}</span></td>`;
-          } else if (column === "feedAttachment") {
-            printContent += `<td><span>${
-              import.meta.env.VITE_API_BASE_URL + item[column]
-            }</span></td>`;
-          } else {
-            printContent += `<td>${item[column]}</td>`;
-          }
-        }
-      });
-      printContent += "</tr>";
-    });
-
-    printContent += "</tbody></table></body></html>";
-
-    // Create an iframe for printing
-    const printFrame = document.createElement("iframe");
-    printFrame.style.position = "absolute";
-    printFrame.style.top = "-999px";
-    document.body.appendChild(printFrame);
-
-    // Write content to iframe and print it
-    printFrame.contentDocument.write(printContent);
-    printFrame.contentDocument.close();
-
+    const frame = document.createElement("iframe");
+    frame.style.position = "absolute";
+    frame.style.top = "-999px";
+    document.body.appendChild(frame);
+    frame.contentDocument.write(html);
+    frame.contentDocument.close();
     setTimeout(() => {
-      printFrame.contentWindow.focus();
-      printFrame.contentWindow.print();
-      document.body.removeChild(printFrame);
-    }, 500);
+      frame.contentWindow.print();
+      document.body.removeChild(frame);
+    }, 300);
   };
 
-  // Change page
-  const paginate = (pageNumber) => setCurrentPage(pageNumber);
-
-  // Get sort icon for column
-  const getSortIcon = (field) => {
-    if (sortField !== field) return null;
-
-    return sortDirection === "asc" ? (
-      <ArrowUp size={14} className="ml-1" />
-    ) : (
-      <ArrowDown size={14} className="ml-1" />
-    );
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    await onDelete(deleteTarget.id);
+    setIsDeleting(false);
+    setDeleteTarget(null);
   };
 
-  // Reset filters
-
-  // Close dropdowns when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (
-        showColumnToggle &&
-        !event.target.closest(".column-toggle-container")
-      ) {
-        setShowColumnToggle(false);
-      }
-      if (showFilters && !event.target.closest(".filter-container")) {
-        setShowFilters(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [showColumnToggle, showFilters]);
-
-  // Reset to first page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [filters, searchTerm]);
+  }, [searchTerm]);
+
+  const columns = [
+    {
+      key: "image",
+      header: "Image",
+      width: "80px",
+      render: (item) =>
+        item?.image ? (
+          <ImageCell
+            src={imageUrl(item.image)}
+            alt={`banner-${item.id}`}
+            size={56}
+            onClick={() => setPreviewImage(imageUrl(item.image))}
+          />
+        ) : (
+          <ImageCell src={null} size={56} />
+        ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      width: "120px",
+      render: (item) => (
+        <StatusBadge
+          status={item?.status}
+          tone={
+            item?.status === "active" || item?.status === "terminated"
+              ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20"
+              : "bg-red-50 text-red-700 ring-red-600/20"
+          }
+        />
+      ),
+    },
+  ];
 
   return (
     <div>
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center p-4 border-b border-gray-200">
-        <div className="relative w-full md:w-64 mb-4 md:mb-0">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search size={16} className="text-gray-400" />
-          </div>
-          <input
-            type="text"
-            placeholder="Search..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+      <TableToolbar
+        searchValue={searchTerm}
+        onSearchChange={setSearchTerm}
+        searchPlaceholder="Search by status..."
+        actions={
+          <>
+            <IconButton
+              icon={Download}
+              label="Export"
+              tone="green"
+              onClick={handleDownloadCSV}
+            />
+            <IconButton
+              icon={Printer}
+              label="Print"
+              tone="neutral"
+              onClick={handlePrint}
+            />
+          </>
+        }
+      />
+
+      <CommonTable
+        columns={columns}
+        data={currentItems}
+        emptyMessage={`No ${(title || "banners").toLowerCase()} found`}
+        minWidth="420px"
+        renderRowActions={(item) => (
+          <>
+            {item?.image && (
+              <IconButton
+                icon={Eye}
+                label="View"
+                tone="blue"
+                onClick={() => setPreviewImage(imageUrl(item.image))}
+              />
+            )}
+            <IconButton
+              icon={SquarePen}
+              label="Edit"
+              tone="purple"
+              onClick={() => onEdit(item)}
+            />
+            <IconButton
+              icon={Trash2}
+              label="Delete"
+              tone="red"
+              onClick={() => setDeleteTarget(item)}
+            />
+          </>
+        )}
+      />
+
+      <Pagination
+        currentPage={currentPage}
+        totalItems={filteredData.length}
+        itemsPerPage={itemsPerPage}
+        onPageChange={setCurrentPage}
+        onItemsPerPageChange={(value) => {
+          setItemsPerPage(value);
+          setCurrentPage(1);
+        }}
+      />
+
+      <DeleteConfirmationModal
+        isOpen={!!deleteTarget}
+        title="Delete Banner"
+        itemName="this banner"
+        loading={isDeleting}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+      />
+
+      <Modal
+        open={!!previewImage}
+        onClose={() => setPreviewImage(null)}
+        title="Image preview"
+        maxWidth="max-w-xl"
+      >
+        {previewImage && (
+          <img
+            src={previewImage}
+            alt="preview"
+            className="w-full max-h-[70vh] object-contain rounded-xl"
           />
-        </div>
-
-        <div className="flex space-x-2">
-          <button
-            style={{ cursor: "pointer" }}
-            onClick={handleDownloadCSV}
-            className="flex items-center px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
-          >
-            <Download size={16} className="mr-1" />
-            <span className="text-sm">Export</span>
-          </button>
-
-          <button
-            style={{ cursor: "pointer" }}
-            onClick={handlePrint}
-            className="flex items-center px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
-          >
-            <Printer size={16} className="mr-1" />
-            <span className="text-sm">Print</span>
-          </button>
-
-          <div className="relative column-toggle-container">
-            <button
-              style={{ cursor: "pointer" }}
-              onClick={() => setShowColumnToggle(!showColumnToggle)}
-              className="flex items-center px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
-            >
-              <EyeOff size={16} className="mr-1" />
-              <span className="text-sm">Filter</span>
-              <ChevronDown size={16} className="ml-1" />
-            </button>
-
-            {showColumnToggle && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-10 border border-gray-200">
-                <div className="p-2">
-                  <h4 className="text-sm font-medium text-gray-700 mb-2">
-                    Toggle Columns
-                  </h4>
-                  <div className="space-y-1">
-                    {Object.keys(visibleColumns).map((column) => (
-                      <label key={column} className="flex items-center text-sm">
-                        <input
-                          style={{ cursor: "pointer" }}
-                          type="checkbox"
-                          checked={visibleColumns[column]}
-                          onChange={() => toggleColumn(column)}
-                          className="mr-2"
-                        />
-                        {column.charAt(0).toUpperCase() + column.slice(1)}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="w-full" ref={tableRef}>
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {visibleColumns.id && (
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  SNo
-                </th>
-              )}
-              {visibleColumns.image && (
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Image
-                </th>
-              )}
-           
-              {visibleColumns.status && (
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-              )}
-              
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {currentItems.length > 0 ? (
-              currentItems.map((item, index) => (
-                <tr key={item?.id}>
-                  {visibleColumns.id && (
-                    <td className="px-6 py-4 capitalize">{index + 1}</td>
-                  )}
-
-                  {visibleColumns.image && (
-                    <td className="px-6 py-4">
-                        {item?.image ? (
-                          <div className="w-16 h-16 sm:w-20 sm:h-20  rounded-xl overflow-hidden">
-                            <img
-                            src={`${import.meta.env.VITE_API_BASE_URL}/profilepic/${item?.image}`}
-                            alt={`category-image-${item.id}`}
-                            className="w-full h-full object-cover"
-                            />
-                                
-                          </div>
-                            ) : (
-                              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-gray-200 flex items-center justify-center text-gray-500">
-                                No Image
-                              </div>
-                            )}
-                    </td>
-                  )}
-
-               
-                   {visibleColumns.status && (
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span
-                        className={`px-3 inline-flex text-xs leading-5 font-semibold rounded capitalize ${
-                          item.status === "active"
-                            ? "bg-green-100 text-green-800"
-                            : item.status === "terminated"
-                            ? "bg-green-100 text-green-800"
-                            : "bg-red-100 text-red-800"
-                        }`}
-                      >
-                        {item?.status}
-                      </span>
-                    </td>
-                  )}
-                  
-                  
-                  <td className="px-6 py-4  whitespace-nowrap ">
-                    {/* <button
-                        style={{ cursor: "pointer" }}
-                        onClick={() => onEdit(item)}
-                        className="text-indigo-600 hover:text-indigo-900 mr-2"
-                        >
-                        Edit
-                        </button> */}
-                    <button
-                      style={{ cursor: "pointer" }}
-                      onClick={() => onDelete(item?.id)}
-                      className="text-red-600 hover:text-red-900"
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td
-                  colSpan="6"
-                  className="px-6 py-4 text-center text-sm text-gray-500"
-                >
-                  No {title.toLowerCase()} found
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Pagination */}
-      <div className="border-t border-gray-200 px-4 py-3 flex items-center justify-between">
-        <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm text-gray-700">
-              Showing{" "}
-              <span className="font-medium">
-                {currentItems.length > 0 ? indexOfFirstItem + 1 : 0}
-              </span>{" "}
-              to{" "}
-              <span className="font-medium">
-                {Math.min(indexOfLastItem, sortedData.length)}
-              </span>{" "}
-              of <span className="font-medium">{sortedData.length}</span>{" "}
-              results
-            </p>
-          </div>
-          <div className="flex">
-            <nav className="flex rounded-md" aria-label="Pagination">
-              {/* Previous button with ChevronLeft icon */}
-              <button
-                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1}
-                className={`flex items-center justify-center px-3 py-2 rounded-l-md bg-white text-sm font-medium cursor-pointer ${
-                  currentPage === 1
-                    ? "text-gray-300 cursor-not-allowed"
-                    : "text-gray-500 hover:bg-gray-100"
-                }`}
-              >
-                <ChevronDown className="rotate-90 h-5 w-5" />
-              </button>
-
-              {/* Fixed width container for page numbers - no borders */}
-              <div className="flex">
-                {(() => {
-                  // Always show exactly 5 elements for consistent width:
-                  // First page, ellipsis/page, current/adjacent, ellipsis/page, last page
-
-                  // Create array to hold exactly 5 pagination items
-                  const pages = new Array(5).fill(null);
-
-                  if (totalPages <= 5) {
-                    // Simple case: just show all pages
-                    for (let i = 0; i < Math.min(totalPages, 5); i++) {
-                      const pageNum = i + 1;
-                      pages[i] = (
-                        <button
-                          key={pageNum}
-                          onClick={() => paginate(pageNum)}
-                          className={`flex items-center justify-center w-10 py-2 cursor-pointer mx-0.5 rounded ${
-                            currentPage === pageNum
-                              ? "bg-black text-white font-medium transform scale-110 z-10 shadow-md shadow-black"
-                              : "bg-white text-gray-700 hover:bg-gray-100"
-                          } text-sm transition-all duration-200`}
-                        >
-                          {pageNum}
-                        </button>
-                      );
-                    }
-                  } else {
-                    // Complex case: 5+ pages, show strategic positions
-
-                    // Element 0: Always first page
-                    pages[0] = (
-                      <button
-                        key={1}
-                        onClick={() => paginate(1)}
-                        className={`flex items-center justify-center w-10 py-2 cursor-pointer mx-0.5 rounded ${
-                          currentPage === 1
-                            ? "bg-black text-white font-medium transform scale-110 z-10 shadow-md shadow-black"
-                            : "bg-white text-gray-700 hover:bg-gray-100"
-                        } text-sm transition-all duration-200`}
-                      >
-                        1
-                      </button>
-                    );
-
-                    // Element 4: Always last page
-                    pages[4] = (
-                      <button
-                        key={totalPages}
-                        onClick={() => paginate(totalPages)}
-                        className={`flex items-center justify-center w-10 py-2 cursor-pointer mx-0.5 rounded ${
-                          currentPage === totalPages
-                            ? "bg-black text-white font-medium transform scale-110 z-10 shadow-md shadow-black"
-                            : "bg-white text-gray-700 hover:bg-gray-100"
-                        } text-sm transition-all duration-200`}
-                      >
-                        {totalPages}
-                      </button>
-                    );
-
-                    // Next, determine elements 1, 2, and 3 based on current page position
-                    if (currentPage <= 3) {
-                      // Near the start: show 1, 2, 3, ..., last
-                      pages[1] = (
-                        <button
-                          key={2}
-                          onClick={() => paginate(2)}
-                          className={`flex items-center justify-center w-10 py-2 cursor-pointer mx-0.5 rounded ${
-                            currentPage === 2
-                              ? "bg-black text-white font-medium transform scale-110 z-10 shadow-md shadow-black"
-                              : "bg-white text-gray-700 hover:bg-gray-100"
-                          } text-sm transition-all duration-200`}
-                        >
-                          2
-                        </button>
-                      );
-
-                      pages[2] = (
-                        <button
-                          key={3}
-                          onClick={() => paginate(3)}
-                          className={`flex items-center justify-center w-10 py-2 cursor-pointer mx-0.5 rounded ${
-                            currentPage === 3
-                              ? "bg-black text-white font-medium transform scale-110 z-10 shadow-md shadow-black"
-                              : "bg-white text-gray-700 hover:bg-gray-100"
-                          } text-sm transition-all duration-200`}
-                        >
-                          3
-                        </button>
-                      );
-
-                      pages[3] = (
-                        <button
-                          key="right-dots"
-                          onClick={() => paginate(Math.min(4, totalPages - 1))}
-                          className="flex items-center justify-center w-10 py-2 bg-white text-gray-700 hover:bg-gray-100 text-sm cursor-pointer mx-0.5 rounded transition-all duration-200"
-                        >
-                          ...
-                        </button>
-                      );
-                    } else if (currentPage >= totalPages - 2) {
-                      // Near the end: show 1, ..., last-2, last-1, last
-                      pages[1] = (
-                        <button
-                          key="left-dots"
-                          onClick={() => paginate(Math.max(2, totalPages - 3))}
-                          className="flex items-center justify-center w-10 py-2 bg-white text-gray-700 hover:bg-gray-100 text-sm cursor-pointer mx-0.5 rounded transition-all duration-200"
-                        >
-                          ...
-                        </button>
-                      );
-
-                      pages[2] = (
-                        <button
-                          key={totalPages - 2}
-                          onClick={() => paginate(totalPages - 2)}
-                          className={`flex items-center justify-center w-10 py-2 cursor-pointer mx-0.5 rounded ${
-                            currentPage === totalPages - 2
-                              ? "bg-black text-white font-medium transform scale-110 z-10 shadow-md shadow-black"
-                              : "bg-white text-gray-700 hover:bg-gray-100"
-                          } text-sm transition-all duration-200`}
-                        >
-                          {totalPages - 2}
-                        </button>
-                      );
-
-                      pages[3] = (
-                        <button
-                          key={totalPages - 1}
-                          onClick={() => paginate(totalPages - 1)}
-                          className={`flex items-center justify-center w-10 py-2 cursor-pointer mx-0.5 rounded ${
-                            currentPage === totalPages - 1
-                              ? "bg-black text-white font-medium transform scale-110 z-10 shadow-md shadow-black"
-                              : "bg-white text-gray-700 hover:bg-gray-100"
-                          } text-sm transition-all duration-200`}
-                        >
-                          {totalPages - 1}
-                        </button>
-                      );
-                    } else {
-                      // Middle case: show 1, ..., current, ..., last
-                      pages[1] = (
-                        <button
-                          key="left-dots"
-                          onClick={() => paginate(Math.max(2, currentPage - 1))}
-                          className="flex items-center justify-center w-10 py-2 bg-white text-gray-700 hover:bg-gray-100 text-sm cursor-pointer mx-0.5 rounded transition-all duration-200"
-                        >
-                          ...
-                        </button>
-                      );
-
-                      pages[2] = (
-                        <button
-                          key={currentPage}
-                          onClick={() => paginate(currentPage)}
-                          className="flex items-center justify-center w-10 py-2 bg-black text-white font-medium text-sm cursor-pointer mx-0.5 rounded transform scale-110 z-10 shadow-md shadow-black transition-all duration-200"
-                        >
-                          {currentPage}
-                        </button>
-                      );
-
-                      pages[3] = (
-                        <button
-                          key="right-dots"
-                          onClick={() =>
-                            paginate(Math.min(currentPage + 1, totalPages - 1))
-                          }
-                          className="flex items-center justify-center w-10 py-2 bg-white text-gray-700 hover:bg-gray-100 text-sm cursor-pointer mx-0.5 rounded transition-all duration-200"
-                        >
-                          ...
-                        </button>
-                      );
-                    }
-                  }
-
-                  // Filter out any null elements (if totalPages < 5)
-                  return pages.filter(Boolean);
-                })()}
-              </div>
-
-              {/* Next button with ChevronRight icon */}
-              <button
-                onClick={() =>
-                  setCurrentPage((prev) => Math.min(prev + 1, totalPages))
-                }
-                disabled={currentPage === totalPages || totalPages === 0}
-                className={`flex items-center justify-center px-3 py-2 rounded-r-md bg-white text-sm font-medium cursor-pointer ${
-                  currentPage === totalPages || totalPages === 0
-                    ? "text-gray-300 cursor-not-allowed"
-                    : "text-gray-500 hover:bg-gray-100"
-                }`}
-              >
-                <ChevronDown className="rotate-270 h-5 w-5" />
-              </button>
-            </nav>
-          </div>
-        </div>
-      </div>
+        )}
+      </Modal>
     </div>
   );
 };

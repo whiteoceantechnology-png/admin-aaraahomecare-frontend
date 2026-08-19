@@ -7,6 +7,7 @@ import { Swiper, SwiperSlide } from 'swiper/react';
 import { Autoplay } from 'swiper/modules';
 import 'swiper/css';
 import 'swiper/css/autoplay';
+import { formatDate } from "../../utils/formatDate";
 
 // Badge
 const CustomBadge = ({ children, variant = "default" }) => {
@@ -60,14 +61,6 @@ let userDetail=useSelector((state)=>state.allUsers.userDetail)
      }
    }, [userDetail]);
    
-  const formatDate = (dateString) =>
-    new Date(dateString).toLocaleDateString("en-US", {
-      weekday: "short",
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    })
-
   const formatTime = (timeString) =>
     timeString
       ? new Date(`2000-01-01T${timeString}`).toLocaleTimeString("en-US", {

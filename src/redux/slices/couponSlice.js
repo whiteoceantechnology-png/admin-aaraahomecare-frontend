@@ -1,6 +1,10 @@
-
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import api from "../../utils/api";
+import {
+  fetchAllCoupons,
+  createCoupon,
+  editCoupon,
+  removeCoupon,
+} from "./couponApi";
 
 
 
@@ -9,12 +13,7 @@ export const getAllCouponsList = createAsyncThunk(
   "allCoupons/getAllCouponsList",
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/app/getallcoupons", {},{
-        headers: {
-          "Content-Type": "application/json", // optional in GET, but included here per request
-        },
-        withCredentials: false,
-      });
+      const response = await fetchAllCoupons();
       return response.data.data;
     } catch (error) {
       const message =
@@ -31,12 +30,7 @@ export const addCoupon = createAsyncThunk(
   "allCoupons/addCoupon",
   async (couponData, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/app/addcoupons", couponData, {
-        headers: {
-          "Content-Type": "application/json", // optional in GET, but included here per request
-        },
-        withCredentials: false,
-      });
+      const response = await createCoupon(couponData);
       return response.data.data;
     } catch (error) {
       const message =
@@ -48,17 +42,29 @@ export const addCoupon = createAsyncThunk(
   }
 );
 
+// update coupon
+export const updateCoupon = createAsyncThunk(
+  "allCoupons/updateCoupon",
+  async (couponData, { rejectWithValue }) => {
+    try {
+      const response = await editCoupon(couponData);
+      return response.data.data;
+    } catch (error) {
+      const message =
+        error.response?.data?.error?.message ||
+        error.message ||
+        "Failed to update coupon";
+      return rejectWithValue(message);
+    }
+  }
+);
+
 // delete coupon
 export const deleteCoupon = createAsyncThunk(
   "allCoupons/deleteCoupon",
   async (id, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/app/deletecoupons", id,{
-        headers: {
-          "Content-Type": "application/json", // optional in GET, but included here per request
-        },
-        withCredentials: false,
-      });
+      const response = await removeCoupon(id);
       return response.data.data;
     } catch (error) {
       const message =
@@ -114,11 +120,24 @@ const allCouponsSlice = createSlice({
       })
       .addCase(addCoupon.fulfilled, (state) => {
         state.loading = false;
-               
+
       })
       .addCase(addCoupon.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload || "Failed to add Coupon";
+      })
+
+      // update coupon
+      .addCase(updateCoupon.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(updateCoupon.fulfilled, (state) => {
+        state.loading = false;
+      })
+      .addCase(updateCoupon.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload || "Failed to update coupon";
       })
 
       // delete coupon
@@ -128,13 +147,13 @@ const allCouponsSlice = createSlice({
             })
             .addCase(deleteCoupon.fulfilled, (state) => {
               state.loading = false;
-              
+
             })
             .addCase(deleteCoupon.rejected, (state, action) => {
               state.loading = false;
               state.error = action.payload || "Failed to delete coupon";
             });
-              
+
   },
 });
 

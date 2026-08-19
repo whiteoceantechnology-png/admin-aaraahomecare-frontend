@@ -1,7 +1,13 @@
 import { useForm } from "react-hook-form";
-import { Save, X } from "lucide-react";
 
-const AdminForm = ({ onSubmit, onCancel, defaultValues = {} }) => {
+const inputClass = (hasError) =>
+  `w-full px-3.5 py-2.5 rounded-lg border text-[15px] font-medium text-gray-900 placeholder:text-gray-400 transition-colors focus:outline-none focus:ring-2 ${
+    hasError
+      ? "border-red-300 focus:ring-red-200 focus:border-red-400"
+      : "border-gray-200 focus:ring-[var(--brand-purple)]/25 focus:border-[var(--brand-purple)]"
+  }`;
+
+const AdminForm = ({ onSubmit, onCancel, defaultValues = {}, loading = false }) => {
   const isEditMode = Boolean(defaultValues?.id);
 
   const {
@@ -9,7 +15,6 @@ const AdminForm = ({ onSubmit, onCancel, defaultValues = {} }) => {
     handleSubmit,
     formState: { errors },
     reset,
-    watch,
   } = useForm({
     defaultValues: {
       username: defaultValues.username || "",
@@ -32,39 +37,35 @@ const AdminForm = ({ onSubmit, onCancel, defaultValues = {} }) => {
     reset();
   };
 
+  const primaryLabel = loading ? "Saving..." : isEditMode ? "Update" : "Add";
+
   return (
-    <form
-      onSubmit={handleSubmit(onFormSubmit)}
-      className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white p-6 rounded-md shadow"
-    >
+    <form onSubmit={handleSubmit(onFormSubmit)} className="grid grid-cols-1 md:grid-cols-2 gap-5">
       {/* Username */}
       <div className="flex flex-col">
-        <label className="text-sm font-medium text-gray-700 mb-1">
+        <label className="text-[14px] font-medium text-gray-700 mb-1">
           Username
         </label>
         <input
           type="text"
           {...register("username", {
             required: "Username is required",
-
             validate: (value) =>
               value.trim() !== "" || "Username cannot be only spaces",
           })}
           placeholder="Enter username"
-          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
-            errors.username
-              ? "border-red-500 focus:ring-red-500"
-              : "border-gray-300 focus:ring-blue-500"
-          }`}
+          className={inputClass(errors.username)}
         />
         {errors.username && (
-          <p className="text-sm text-red-500 mt-1">{errors.username.message}</p>
+          <p className="text-red-600 text-xs mt-1.5">{errors.username.message}</p>
         )}
       </div>
 
       {/* Email */}
       <div className="flex flex-col">
-        <label className="text-sm font-medium text-gray-700 mb-1">Email</label>
+        <label className="text-[14px] font-medium text-gray-700 mb-1">
+          Email
+        </label>
         <input
           type="email"
           {...register("email", {
@@ -75,56 +76,43 @@ const AdminForm = ({ onSubmit, onCancel, defaultValues = {} }) => {
             },
           })}
           placeholder="Enter email address"
-          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
-            errors.email
-              ? "border-red-500 focus:ring-red-500"
-              : "border-gray-300 focus:ring-blue-500"
-          }`}
+          className={inputClass(errors.email)}
         />
         {errors.email && (
-          <p className="text-sm text-red-500 mt-1">{errors.email.message}</p>
+          <p className="text-red-600 text-xs mt-1.5">{errors.email.message}</p>
         )}
       </div>
 
       {/* Password */}
       <div className="flex flex-col">
-        <label className="text-sm font-medium text-gray-700 mb-1">
+        <label className="text-[14px] font-medium text-gray-700 mb-1">
           Password{" "}
           {isEditMode && (
-            <span className="text-gray-400">(leave blank to keep current)</span>
+            <span className="text-gray-400 font-normal">
+              (leave blank to keep current)
+            </span>
           )}
         </label>
         <input
           type="password"
           {...register("password", {
             required: !isEditMode && "Password is required",
-            minLength: isEditMode
-              ? {
-                  value: 0,
-                  message: "",
-                }
-              : {
-                  value: 6,
-                  message: "Password must be at least 6 characters",
-                },
             validate: (value) =>
               isEditMode || value.trim().length >= 6 || "Minimum 6 characters",
           })}
           placeholder="Enter password"
-          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
-            errors.password
-              ? "border-red-500 focus:ring-red-500"
-              : "border-gray-300 focus:ring-blue-500"
-          }`}
+          className={inputClass(errors.password)}
         />
         {errors.password && (
-          <p className="text-sm text-red-500 mt-1">{errors.password.message}</p>
+          <p className="text-red-600 text-xs mt-1.5">{errors.password.message}</p>
         )}
       </div>
 
       {/* Phone */}
       <div className="flex flex-col">
-        <label className="text-sm font-medium text-gray-700 mb-1">Phone</label>
+        <label className="text-[14px] font-medium text-gray-700 mb-1">
+          Phone
+        </label>
         <input
           type="tel"
           {...register("phone", {
@@ -135,14 +123,10 @@ const AdminForm = ({ onSubmit, onCancel, defaultValues = {} }) => {
             },
           })}
           placeholder="Enter phone number"
-          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
-            errors.phone
-              ? "border-red-500 focus:ring-red-500"
-              : "border-gray-300 focus:ring-blue-500"
-          }`}
+          className={inputClass(errors.phone)}
         />
         {errors.phone && (
-          <p className="text-sm text-red-500 mt-1">{errors.phone.message}</p>
+          <p className="text-red-600 text-xs mt-1.5">{errors.phone.message}</p>
         )}
       </div>
 
@@ -151,17 +135,16 @@ const AdminForm = ({ onSubmit, onCancel, defaultValues = {} }) => {
         <button
           type="button"
           onClick={onCancel}
-          className="flex items-center cursor-pointer px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100"
+          className="px-4 py-2.5 h-12 rounded-xl text-[14px] font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50 active:scale-[0.98] transition-all duration-200 cursor-pointer"
         >
-          <X size={16} className="mr-1" />
           Cancel
         </button>
         <button
           type="submit"
-          className="flex items-center cursor-pointer px-4 py-2 bg-black hover:bg-black text-white rounded-md"
+          disabled={loading}
+          className="px-4 py-2.5 h-12 rounded-xl text-[14px] font-semibold text-white bg-gradient-to-r from-[var(--brand-purple)] to-[var(--brand-purple-dark)] shadow-sm hover:brightness-110 active:scale-[0.98] transition-all duration-200 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:brightness-100"
         >
-          <Save size={16} className="mr-1" />
-          {defaultValues.username ? "Update" : "Save"}
+          {primaryLabel}
         </button>
       </div>
     </form>

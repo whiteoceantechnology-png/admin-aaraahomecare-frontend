@@ -5,8 +5,9 @@ import AllUsers from "../components/data/AllUsers";
 import Product from "../components/data/Product";
 import Variant from "../components/data/Variant";
 import Order from "../components/data/Order";
-import Stock from "../components/data/Stock";
 import Customer from "../components/data/Customer";
+import Tax from "../components/data/Tax";
+import Brand from "../components/data/Brand";
 
 // Lazy-loaded components
 const DashboardPage = lazy(
@@ -26,6 +27,23 @@ const Banner = lazy(() => import("../components/data/Banner"));
 const Coupon = lazy(() => import("../components/data/Coupon"));
 const Subscription = lazy(() => import("../components/data/Subscription"));
 const Review = lazy(() => import("../components/data/Review"));
+const CustomerDetailsPage = lazy(
+  () => import("../components/details/CustomerDetailsPage"),
+);
+const OrderDetailsPage = lazy(
+  () => import("../components/details/OrderDetailsPage"),
+);
+const AddCategoryPage = lazy(
+  () => import("../components/details/AddCategoryPage"),
+);
+const CategoryProductsPage = lazy(
+  () => import("../components/details/CategoryProductsPage"),
+);
+const ProductDetailsPage = lazy(
+  () => import("../components/details/ProductDetailsPage"),
+);
+const Payment = lazy(() => import("../components/data/Payment"));
+const Logistics = lazy(() => import("../components/data/Logistics"));
 
 const AppRoutes = () => {
   const token = localStorage.getItem("token");
@@ -50,7 +68,7 @@ const AppRoutes = () => {
           path="/"
           element={
             token ? (
-              <DashboardPage title="DashboardPage" />
+              <DashboardPage title="Dashboard" />
             ) : (
               <Navigate to="/auth" replace />
             )
@@ -115,6 +133,26 @@ const AppRoutes = () => {
         />
 
         <Route
+          path="/categories/new"
+          element={token ? <AddCategoryPage /> : <Navigate to="/auth" />}
+        />
+
+        <Route
+          path="/categories/:id/edit"
+          element={token ? <AddCategoryPage /> : <Navigate to="/auth" />}
+        />
+
+        <Route
+          path="/categories/:id/products"
+          element={token ? <CategoryProductsPage /> : <Navigate to="/auth" />}
+        />
+
+        <Route
+          path="/products/:id"
+          element={token ? <ProductDetailsPage /> : <Navigate to="/auth" />}
+        />
+
+        <Route
           path="/notification"
           element={
             token ? (
@@ -143,9 +181,14 @@ const AppRoutes = () => {
         />
 
         <Route
+          path="/brand"
+          element={token ? <Brand title="Brand" /> : <Navigate to="/auth" />}
+        />
+
+        <Route
           path="/variant"
           element={
-            token ? <Variant title="Variants" /> : <Navigate to="/auth" />
+            token ? <Variant title="Inventory" /> : <Navigate to="/auth" />
           }
         />
 
@@ -155,17 +198,33 @@ const AppRoutes = () => {
         />
 
         <Route
-          path="/stock"
-          element={token ? <Stock title="Stock" /> : <Navigate to="/auth" />}
-        />
-
-        <Route
           path="/customer"
           element={
             token ? <Customer title="Customers" /> : <Navigate to="/auth" />
           }
         />
 
+        <Route
+          path="/customers/:id"
+          element={token ? <CustomerDetailsPage /> : <Navigate to="/auth" />}
+        />
+
+        <Route
+          path="/orders/:id"
+          element={token ? <OrderDetailsPage /> : <Navigate to="/auth" />}
+        />
+        <Route
+          path="/tax"
+          element={token ? <Tax title="Tax" /> : <Navigate to="/auth" />}
+        />
+        <Route
+          path="/payment"
+          element={token ? <Payment /> : <Navigate to="/auth" />}
+        />
+        <Route
+          path="/logistics"
+          element={token ? <Logistics /> : <Navigate to="/auth" />}
+        />
         <Route
           path="/subscription"
           element={

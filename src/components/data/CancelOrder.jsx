@@ -1,57 +1,49 @@
-// src/components/order/CancelOrder.jsx
-import React, { useState } from "react";
-import { Form, FormGroup, Label, Input } from "reactstrap";
+// src/components/data/CancelOrder.jsx
+import { useState } from "react";
 
-const CancelOrder = ({ order }) => {
+const CancelOrder = ({ order, onSubmit, loading }) => {
   const [reason, setReason] = useState("");
 
   if (!order) {
-    return <div style={{ padding: "20px" }}>Select an order to cancel.</div>;
+    return <p className="text-sm text-gray-500 text-center py-8">Select an order to cancel.</p>;
   }
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    alert(`Order ${order.orderId} cancelled. Reason: ${reason}`);
+    // POST /admin/orders/{id}/cancel takes { reason } — a dedicated endpoint,
+    // not the generic status-update PUT this used to reuse.
+    onSubmit({ reason });
   };
 
   return (
-    <section className="box">
-      <header className="panel_header">
-        <h2 className="title float-left">Cancel Order – {order.orderId}</h2>
-      </header>
-       <div className="px-4 pt-3 pb-2 bg-white text-sm">
-       
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <p className="text-[13px] text-gray-500">
+        Cancelling order <span className="font-medium text-gray-800">{order.orderNumber}</span>
+      </p>
+
+      <div className="flex flex-col">
+        <label className="text-[13px] font-medium text-gray-700 mb-1">
+          Reason for cancellation
+        </label>
+        <textarea
+          rows={3}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Type your reason..."
+          className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-[13px] text-gray-900 placeholder:text-gray-400 transition-colors focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+        />
       </div>
-      <div className="content-body pt-3 mt-5">
-        <div className="row">
-          <div className="col-12 col-md-6">
-            <h5>Cancel this order</h5>
-            <Form onSubmit={handleSubmit}>
-              <FormGroup>
-                <Label htmlFor="cancelReason">Reason for cancellation</Label>
-                <Input
-                  type="textarea"
-                  rows={3}
-                  id="cancelReason"
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  placeholder="Type your reason..."
-                />
-              </FormGroup>
-              <FormGroup style={{ marginBottom: "0px" }}>
-                <button
-                  type="submit"
-                  className="btn btn-danger"
-                  style={{ color: "#fff", backgroundColor: "#dc3545" }}
-                >
-                  Confirm Cancel
-                </button>
-              </FormGroup>
-            </Form>
-          </div>
-        </div>
+
+      <div className="flex justify-end gap-3 pt-2">
+        <button
+          type="submit"
+          disabled={loading}
+          className="px-4 py-2.5 rounded-lg text-[14px] font-semibold text-white bg-red-600 hover:bg-red-700 shadow-sm active:scale-[0.98] transition-all duration-200 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {loading ? "Cancelling..." : "Confirm Cancel"}
+        </button>
       </div>
-    </section>
+    </form>
   );
 };
 

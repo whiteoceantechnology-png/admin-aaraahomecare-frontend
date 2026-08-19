@@ -1,115 +1,82 @@
-// src/components/order/TrackOrderForm.jsx
-import React, { useState, useEffect } from "react";
-import { Form, FormGroup, Label, Input } from "reactstrap";
+// src/components/form/TrackOrderForm.jsx
+import { useState } from "react";
 
-const TrackOrderForm = ({ order }) => {
-  const dummyOrder = {
-    orderId: "12",
-    trackingInfo: "C12345, BlueDart",
-    orderStatus: "Processing",
-  };
+const inputClass =
+  "w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--brand-purple)]/25 focus:border-[var(--brand-purple)]";
 
-  const currentOrder = order || dummyOrder;
+const STATUS_OPTIONS = [
+  "pending_payment",
+  "confirmed",
+  "processing",
+  "packed",
+  "shipped",
+  "delivered",
+  "cancelled",
+];
 
-  const [courierId, setCourierId] = useState("");
-  const [courierName, setCourierName] = useState("");
+const TrackOrderForm = ({ order, onSubmit, loading }) => {
+  const [status, setStatus] = useState((order?.status || "").toLowerCase());
+  const [trackingId, setTrackingId] = useState(order?.trackingId || "");
+  const [notes, setNotes] = useState(order?.notes || "");
 
-  useEffect(() => {
-    if (currentOrder && currentOrder.trackingInfo) {
-      const split = currentOrder.trackingInfo.split(",");
-      setCourierId(split[0] || "");
-      setCourierName((split[1] || "").trim());
-    } else {
-      setCourierId("");
-      setCourierName("");
-    }
-  }, [currentOrder]);
+  if (!order) {
+    return <p className="text-sm text-gray-500 text-center py-8">Select an order to track.</p>;
+  }
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    alert(
-      `Tracking updated for ${currentOrder.orderId}: ${courierId}, ${courierName}`
-    );
+    onSubmit({ status, trackingId, notes });
   };
 
   return (
-    <section className="box">
-      <header className="panel_header">
-        <h4 className="title float-left">
-          Track Order – {currentOrder.orderId}
-        </h4>
-      </header>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <p className="text-sm text-gray-500">
+        Order <span className="font-medium text-gray-800">{order.orderNumber}</span>
+      </p>
 
-    
-      <div className="px-4 pt-3 pb-2 bg-white text-sm">
-       
+      <div className="flex flex-col">
+        <label className="text-[14px] font-medium text-gray-700 mb-1">Status</label>
+        <select value={status} onChange={(e) => setStatus(e.target.value)} className={inputClass}>
+          {STATUS_OPTIONS.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt.replace(/_/g, " ")}
+            </option>
+          ))}
+        </select>
       </div>
 
-     
-      <div className="content-body pt-3 mt-5">
-        <div className="row">
-          <div className="col-12 col-sm-6 col-md-5">
-            <h5>Current Tracking Information</h5>
-            <ul>
-              <li>
-                Courier Id{" "}
-                <span>
-                  {currentOrder.trackingInfo
-                    ? currentOrder.trackingInfo.split(",")[0]
-                    : "NA"}
-                </span>
-              </li>
-              <li>
-                Courier Name{" "}
-                <span>
-                  {currentOrder.trackingInfo
-                    ? (currentOrder.trackingInfo.split(",")[1] || "").trim()
-                    : "NA"}
-                </span>
-              </li>
-            </ul>
-          </div>
-
-          <div className="col-12 col-sm-6 col-md-5">
-            <h5>Add Tracking Information</h5>
-            <Form onSubmit={handleSubmit}>
-              <FormGroup>
-                <Label htmlFor="courierId">Courier Id</Label>
-                <Input
-                  type="text"
-                  id="courierId"
-                  value={courierId}
-                  onChange={(e) => setCourierId(e.target.value)}
-                  placeholder="Enter Courier Id"
-                />
-              </FormGroup>
-              <FormGroup>
-                <Label htmlFor="courierName">Courier Name</Label>
-                <Input
-                  type="text"
-                  id="courierName"
-                  value={courierName}
-                  onChange={(e) => setCourierName(e.target.value)}
-                  placeholder="Enter Courier Name"
-                />
-              </FormGroup>
-              <FormGroup style={{ marginBottom: "0px" }}>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  style={{
-                    color: "#fff",
-                    backgroundColor: "#247554",
-                  }}
-                >
-                  Add tracking Info
-                </button>
-              </FormGroup>
-            </Form>
-          </div>
-        </div>
+      <div className="flex flex-col">
+        <label className="text-[14px] font-medium text-gray-700 mb-1">Tracking ID</label>
+        <input
+          type="text"
+          value={trackingId}
+          onChange={(e) => setTrackingId(e.target.value)}
+          placeholder="e.g. TRK-987654321"
+          className={inputClass}
+        />
       </div>
-    </section>
+
+      <div className="flex flex-col">
+        <label className="text-[14px] font-medium text-gray-700 mb-1">Notes</label>
+        <textarea
+          rows={3}
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Optional notes for this shipment..."
+          className={inputClass}
+        />
+      </div>
+
+      <div className="flex justify-end gap-3 pt-2">
+        <button
+          type="submit"
+          disabled={loading}
+          className="px-4 py-2.5 h-12 rounded-xl text-[14px] font-semibold text-white bg-gradient-to-r from-[var(--brand-purple)] to-[var(--brand-purple-dark)] shadow-sm hover:brightness-110 active:scale-[0.98] transition-all duration-200 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {loading ? "Saving..." : "Update Tracking"}
+        </button>
+      </div>
+    </form>
   );
 };
 

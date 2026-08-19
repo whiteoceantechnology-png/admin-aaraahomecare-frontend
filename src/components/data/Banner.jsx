@@ -1,234 +1,164 @@
 // src/components/data/Banner.jsx
 import { useEffect, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
 import BannerTable from "../table/BannerTable";
 import BannerForm from "../form/BannerForm";
+import Drawer from "../common/Drawer";
 import { toast } from "react-hot-toast";
+import {
+  getActiveBannerList,
+  addBanner,
+  updateBanner,
+  deleteBanner,
+} from "../../redux/slices/bannerSlice";
+
+const FORM_ID = "banner-drawer-form";
+
+const buildBannerFormData = (data) => {
+  const fd = new FormData();
+  (data.image || []).forEach((file) => fd.append("image", file));
+  if (data.type) fd.append("type", data.type);
+  if (data.appType) fd.append("appType", data.appType);
+  fd.append("issub", data.issub ? "true" : "false");
+  return fd;
+};
 
 const Banner = ({ title = "Banner" }) => {
-  // Dummy banner list
-  const [data, setData] = useState([
-    {
-      id: 1,
-      store_id: 1,
-      image: "banner1.jpg",
-      type: "home",
-      place: "app",
-      issub: "no",
-    },
-    {
-      id: 2,
-      store_id: 2,
-      image: "banner2.jpg",
-      type: "offer",
-      place: "web",
-      issub: "yes",
-    },
-  ]);
+  const dispatch = useDispatch();
+  const { allActiveBanners = [], loading } = useSelector(
+    (state) => state.allBanners || {},
+  );
 
-  // Dummy partner options
-  const [partnerOptions] = useState([
-    { id: 1, label: "Store One" },
-    { id: 2, label: "Store Two" },
-  ]);
-
-  const [formData, setFormData] = useState({
-    id: null,          // store_id
-    image: null,       // File or string
-    type: "",
-    appType: "",       // place
-    issub: "no",
-  });
-
-  const [activeTab, setActiveTab] = useState("table"); // table | form
-  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [formData, setFormData] = useState(null);
 
   useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 500);
-    return () => clearTimeout(t);
-  }, []);
+    dispatch(getActiveBannerList());
+  }, [dispatch]);
 
-  // ADD (dummy – local state only)
-  const handleAddData = async (newData) => {
-    const toastId = "addBanner-toast";
+  const isEdit = Boolean(formData?.id);
 
-    const newId = Date.now();
-    const imgs =
-      Array.isArray(newData.image) && newData.image.length
-        ? newData.image.map((f) => f.name || "banner.jpg")
-        : [newData.image?.name || "banner.jpg"];
+  const handleFormSubmit = async (data) => {
+    setSubmitting(true);
+    const formDataToSend = buildBannerFormData(data);
+    if (isEdit) formDataToSend.append("id", formData.id);
 
-    const bannersToAdd = imgs.map((img, idx) => ({
-      id: newId + idx,
-    
-      image: img,
-      
-    }));
+    const res = isEdit
+      ? await dispatch(updateBanner(formDataToSend))
+      : await dispatch(addBanner(formDataToSend));
+    setSubmitting(false);
 
-    setData((prev) => [...bannersToAdd, ...prev]);
-    toast.success("Banner added! (dummy)", { id: toastId });
-    clearForm();
-    setActiveTab("table");
+    const success = isEdit
+      ? updateBanner.fulfilled.match(res)
+      : addBanner.fulfilled.match(res);
+
+    if (success) {
+      toast.success(isEdit ? "Banner updated" : "Banner added");
+      setShowForm(false);
+      dispatch(getActiveBannerList());
+    } else {
+      toast.error(res.payload || "Error");
+    }
   };
 
-  // UPDATE (dummy)
-  const handleUpdateData = async (updatedData) => {
-    const toastId = "updateBanner-toast";
-
-    setData((prev) =>
-      prev.map((item) =>
-        item.id === updatedData.rowId
-          ? {
-              ...item,
-              store_id: updatedData.id || item.store_id,
-              image:
-                updatedData.image?.name ||
-                item.image ||
-                "banner.jpg",
-              type: updatedData.type,
-              place: updatedData.appType,
-              issub: updatedData.issub,
-            }
-          : item
-      )
-    );
-
-    toast.success("Banner updated! (dummy)", { id: toastId });
-    clearForm();
-    setActiveTab("table");
+  const handleDelete = async (id) => {
+    const res = await dispatch(deleteBanner(id));
+    if (deleteBanner.fulfilled.match(res)) {
+      toast.success("Banner deleted");
+      dispatch(getActiveBannerList());
+    } else {
+      toast.error(res.payload || "Error");
+    }
   };
 
-  // DELETE (dummy)
-  const handleDeleteData = async (id) => {
-    const toastId = "delete-toast";
-    setData((prev) => prev.filter((item) => item.id !== id));
-    toast.success("Banner deleted! (dummy)", { id: toastId });
-  };
-
-  const handleEditClick = (record) => {
+  const handleEdit = (record) => {
     setFormData({
-      rowId: record.id,              // internal row id
-      id: record.store_id || null,   // store_id
-      image: null,                   // new upload only
+      id: record.id,
       type: record.type || "",
       appType: record.place || "",
-      issub: record.issub || "no",
+      issub: record.issub === "yes" || record.issub === true,
+      image: record.image ? [record.image] : [],
     });
-    setActiveTab("form");
+    setShowForm(true);
   };
 
-  const handleAddNewClick = () => {
-    clearForm();
-    setActiveTab("form");
+  const handleAddNew = () => {
+    setFormData(null);
+    setShowForm(true);
   };
-
-  const clearForm = () => {
-    setFormData({
-      rowId: null,
-      id: null,
-      image: null,
-      type: "",
-      appType: "",
-      issub: "no",
-    });
-  };
-
-  const handleTabClick = (tab) => setActiveTab(tab);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-10 text-gray-500">
-        <svg
-          className="animate-spin h-5 w-5 text-purple-500 mr-2"
-          viewBox="0 0 24 24"
-        >
-          <circle
-            className="opacity-25"
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            strokeWidth="4"
-          />
-          <path
-            className="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8v8H4z"
-          />
-        </svg>
-        Loading Banner...
-      </div>
-    );
-  }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-800 mb-6">{title}</h2>
-
-        {/* Tabs */}
-        <div className="flex border-b border-gray-200 mb-6">
-          <button
-            style={{ cursor: "pointer" }}
-            className={`px-4 py-2 font-medium text-sm rounded-t-lg mr-2 ${
-              activeTab === "table"
-                ? "bg-white border border-gray-200 border-b-white text-blue-600"
-                : "bg-gray-50 border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-            }`}
-            onClick={() => handleTabClick("table")}
-          >
-            Banners
-          </button>
-          <button
-            style={{ cursor: "pointer" }}
-            className={`px-4 py-2 font-medium text-sm rounded-t-lg ${
-              activeTab === "form"
-                ? "bg-white border border-gray-200 border-b-white text-blue-600"
-                : "bg-gray-50 border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-            }`}
-            onClick={() => handleTabClick("form")}
-          >
-            {formData.rowId ? "Edit Banner" : "Add New Banner"}
-          </button>
+    <div className="space-y-4">
+      {/* HEADER */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 className="text-[20px] lg:text-[34px] font-bold text-gray-900 tracking-[-0.02em] leading-[1.2]">
+            {title}
+          </h2>
+          <p className="text-[15px] font-medium text-gray-500 mt-1.5 leading-[1.6]">
+            Manage the promotional banners shown to customers.
+          </p>
         </div>
 
-        {/* Content */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-          {activeTab === "form" ? (
-            <div className="p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">
-                {formData.rowId ? "Edit Banner" : "Add New Banner"}
-              </h3>
-              <BannerForm
-                defaultValues={formData}
-                partnerOptions={partnerOptions}
-                onSubmit={formData.rowId ? handleUpdateData : handleAddData}
-                onCancel={() => {
-                  clearForm();
-                  setActiveTab("table");
-                }}
-              />
-            </div>
-          ) : (
-            <div>
-              <div className="p-4 border-b border-gray-100">
-                <button
-                  style={{ cursor: "pointer" }}
-                  className="px-4 py-2 bg-black text-white rounded-lg text-sm font-medium hover:bg-black"
-                  onClick={handleAddNewClick}
-                >
-                  Add New Banner
-                </button>
-              </div>
-              <BannerTable
-                data={data}
-                title={title}
-                onEdit={handleEditClick}
-                onDelete={handleDeleteData}
-              />
-            </div>
-          )}
-        </div>
+        <button
+          type="button"
+          onClick={handleAddNew}
+          className="inline-flex items-center justify-center px-4 py-2.5 h-12 rounded-xl text-[14px] font-semibold text-white bg-gradient-to-r from-[var(--brand-purple)] to-[var(--brand-purple-dark)] shadow-sm hover:brightness-110 active:scale-[0.98] transition-all duration-200 cursor-pointer whitespace-nowrap"
+        >
+          Add Banner
+        </button>
       </div>
+
+      {/* TABLE */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-[var(--shadow-card)] overflow-hidden">
+        {loading ? (
+          <div className="py-16 text-center text-sm text-gray-400">
+            Loading banners…
+          </div>
+        ) : (
+          <BannerTable
+            data={allActiveBanners}
+            title={title}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+          />
+        )}
+      </div>
+
+      {/* ADD / EDIT BANNER DRAWER — same right-side drawer pattern as Add Product */}
+      <Drawer
+        open={showForm}
+        onClose={() => setShowForm(false)}
+        title={isEdit ? "Edit Banner" : "Add Banner"}
+        width="max-w-[620px]"
+        footer={
+          <>
+            <div className="flex-1" />
+            <button
+              type="button"
+              onClick={() => setShowForm(false)}
+              className="px-4 py-2.5 rounded-lg text-[13px] font-semibold text-[var(--mk-ink-700)] border border-[var(--mk-line)] bg-white hover:bg-gray-50 transition-colors cursor-pointer"
+            >
+              Close
+            </button>
+            <button
+              type="submit"
+              form={FORM_ID}
+              disabled={submitting}
+              className="px-4 py-2.5 rounded-lg text-[13px] font-semibold text-white bg-[var(--mk-primary)] hover:bg-[var(--mk-primary-hover)] transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {submitting ? "Saving..." : isEdit ? "Save changes" : "Add banner"}
+            </button>
+          </>
+        }
+      >
+        <BannerForm
+          formId={FORM_ID}
+          defaultValues={formData || {}}
+          onSubmit={handleFormSubmit}
+        />
+      </Drawer>
     </div>
   );
 };

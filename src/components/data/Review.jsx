@@ -1,50 +1,45 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import ReviewTable from "../table/ReviewTable";
 import { getAllDeleteReviewRequest } from "../../redux/slices/reviewSlice";
-import { Toaster, toast } from "react-hot-toast";
 
-const Review = ({ title }) => {
-  const [data, setData] = useState([]);
+const Review = ({ title = "Reviews" }) => {
   const dispatch = useDispatch();
 
-  const allReviewValue = useSelector((state) => state.allReviews.allDeleteReviewRequest);
-  const loading = useSelector((state) => state.allReviews.loading); // fixed key
-  const error = useSelector((state) => state.allReviews.error);     // fixed key
-    
+  const allReviewValue = useSelector(
+    (state) => state.allReviews.allDeleteReviewRequest,
+  );
+  const loading = useSelector((state) => state.allReviews.loading);
+  const error = useSelector((state) => state.allReviews.error);
+
   useEffect(() => {
     dispatch(getAllDeleteReviewRequest());
   }, [dispatch]);
 
-  useEffect(() => {
-    if (allReviewValue) {
-      setData(allReviewValue);
-    }
-  }, [allReviewValue]);
-
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      {/* HEADER */}
       <div>
-        <h2 className="text-2xl font-bold text-gray-800 mb-6">{title}</h2>
+        <h2 className="text-[20px] lg:text-[34px] font-bold text-gray-900 tracking-[-0.02em] leading-[1.2]">
+          {title}
+        </h2>
+        <p className="text-[15px] font-medium text-gray-500 mt-1.5 leading-[1.6]">
+          Moderate customer review and deletion requests.
+        </p>
+      </div>
 
-        {/* Error Message */}
+      {/* TABLE */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-[var(--shadow-card)] overflow-hidden">
         {error ? (
-          <div className="text-red-600 bg-red-50 border border-red-200 p-4 rounded-md mb-4">
-            ⚠️ Failed to load Reviews: {error}
+          <div className="py-16 text-center text-sm text-red-500">
+            Failed to load reviews: {error}
           </div>
-         ) : loading ? (
-                  <div className="flex items-center justify-center py-10 text-gray-500">
-          <svg className="animate-spin h-5 w-5 text-purple-500 mr-2" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-          </svg>
-          Loading Reviews...
-        </div>
+        ) : loading ? (
+          <div className="py-16 text-center text-sm text-gray-400">
+            Loading reviews…
+          </div>
         ) : (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-            <ReviewTable data={data} title={title} />
-          </div>
+          <ReviewTable data={allReviewValue || []} title={title} />
         )}
       </div>
     </div>

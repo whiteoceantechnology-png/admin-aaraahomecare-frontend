@@ -1,22 +1,15 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import api from "../../utils/api"; // axios instance
-
+import { loginRequest } from "./authApi";
 
 export const loginUser = createAsyncThunk(
   "auth/loginUser",
   async (credentials, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/auth/login", credentials, {
-        headers: {
-          "Content-Type": "application/json",
-        },
-        // Remove withCredentials if the server does not use cookies
-        withCredentials: false,
-      });
+      const response = await loginRequest(credentials);
       // Store token directly to localStorage here
       if (response.data.data.token) {
         localStorage.setItem("token", response.data.data.token);
-        }
+      }
       return true; // just return success flag, no token in state
     } catch (error) {
       const message =
@@ -32,6 +25,14 @@ const authSlice = createSlice({
     loading: false,
     error: null,
     isAuthenticated: localStorage.getItem("token"), // derive auth from localStorage
+  },
+
+  reducers: {
+    logout: (state) => {
+      state.isAuthenticated = null;
+      state.loading = false;
+      state.error = null;
+    },
   },
 
   extraReducers: (builder) => {

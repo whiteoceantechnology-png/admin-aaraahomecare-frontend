@@ -1,18 +1,26 @@
 import { useEffect, useState } from "react";
 import SubscriptionTable from "../table/SubscriptionTable";
 import SubscriptionForm from "../form/SubscriptionForm";
+import Modal from "../common/Modal";
 import { useDispatch, useSelector } from "react-redux";
-import { Toaster, toast } from "react-hot-toast";
+import { toast } from "react-hot-toast";
 import {
   getAllSubscriptionsList,
   addSubscription,
-  updateSubscriptionStatus,
+  updateSubscription,
 } from "../../redux/slices/subscriptionSlice";
 
-const Subscription = ({ title }) => {
-  const [data, setData] = useState([]);
+const Subscription = ({ title = "Subscription" }) => {
   const dispatch = useDispatch();
-  // Form data state
+
+  const allSubscriptionsList = useSelector(
+    (state) => state.allSubscriptions.allSubscriptionsList,
+  );
+  const loading = useSelector((state) => state.allSubscriptions.loading);
+  const error = useSelector((state) => state.allSubscriptions.error);
+
+  const [showForm, setShowForm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     id: null,
     type: "",
@@ -20,87 +28,31 @@ const Subscription = ({ title }) => {
     price: null,
   });
 
-  // Active tab state
-  const [activeTab, setActiveTab] = useState("table");
-
-  const allSubscriptionsList = useSelector(
-    (state) => state.allSubscriptions.allSubscriptionsList
-  );
-  const loading = useSelector((state) => state.allSubscriptions.loading); // fixed key
-  const error = useSelector((state) => state.allSubscriptions.error); // fixed key
-
   useEffect(() => {
     dispatch(getAllSubscriptionsList());
   }, [dispatch]);
 
-  useEffect(() => {
-    if (allSubscriptionsList) {
-      setData(allSubscriptionsList);
-    }
-  }, [allSubscriptionsList]);
+  const isEdit = Boolean(formData.id);
 
-  const handleAddData = async (finaldata) => {
-    const toastId = "addSubscription-toast";
-    try {
-      const resultAction = await dispatch(addSubscription(finaldata));
-      // check if fulfilled
-      if (addSubscription.fulfilled.match(resultAction)) {
-        toast.dismiss(toastId);
-        await dispatch(getAllSubscriptionsList());
-        toast.success("Subscription added!", { id: toastId });
-        setActiveTab("table");
-      } else {
-        toast.dismiss(toastId);
-        toast.error("Failed to add subscription.", { id: toastId });
-      }
-    } catch (error) {
-      toast.dismiss(toastId);
-      toast.error("Something went wrong.", { id: toastId });
-      console.error("Failed to add data", error);
+  const handleFormSubmit = async (finalData) => {
+    setSubmitting(true);
+    const res = isEdit
+      ? await dispatch(updateSubscription(finalData))
+      : await dispatch(addSubscription(finalData));
+    setSubmitting(false);
+
+    const success = isEdit
+      ? updateSubscription.fulfilled.match(res)
+      : addSubscription.fulfilled.match(res);
+
+    if (success) {
+      toast.success(isEdit ? "Subscription updated" : "Subscription added");
+      await dispatch(getAllSubscriptionsList());
+      setShowForm(false);
+    } else {
+      toast.error(res.payload || "Error");
     }
   };
-
-  const handleUpdateData = async (updatedData) => {
-    const toastId = "updateSubscription-toast";
-    try {
-      const resultAction = await dispatch(addSubscription(updatedData)); // your update thunk
-      // check if fulfilled
-      if (addSubscription.fulfilled.match(resultAction)) {
-        toast.dismiss(toastId);
-        await dispatch(getAllSubscriptionsList());
-        toast.success("Subscription updated!", { id: toastId });
-        setActiveTab("table");
-      } else {
-        toast.dismiss(toastId);
-        toast.error("Failed to update subscription.", { id: toastId });
-      }
-    } catch (error) {
-      toast.dismiss(toastId);
-      toast.error("Something went wrong.", { id: toastId });
-      console.error("Failed to update data", error);
-    }
-  };
-
-  // const handleDeleteData = async (id) => {
-  //   const toastId = "delete-toast"; // unique toast ID
-
-  //   try {
-  //     const resultAction = await dispatch(deleteCoupon({ id: id }));
-
-  //     if (deleteCoupon.fulfilled.match(resultAction)) {
-  //       toast.dismiss(toastId);
-  //       toast.success("Successfully deleted!", { id: toastId });
-  //       await dispatch(getAllCouponsList());
-  //     } else {
-  //       toast.dismiss(toastId);
-  //       toast.error("Failed to delete.", { id: toastId });
-  //     }
-  //   } catch (error) {
-  //     toast.dismiss(toastId);
-  //     toast.error("An error occurred while deleting.", { id: toastId });
-  //     console.error("Failed to delete data", error);
-  //   }
-  // };
 
   const handleEditClick = (record) => {
     setFormData({
@@ -109,129 +61,68 @@ const Subscription = ({ title }) => {
       days: record.days,
       price: record.price,
     });
-
-    setActiveTab("form");
+    setShowForm(true);
   };
 
   const handleAddNewClick = () => {
-    clearForm();
-    setActiveTab("form");
-  };
-
-  const clearForm = () => {
-    setFormData({
-      id: null,
-      type: "",
-      days: null,
-      price: null,
-    });
-  };
-
-  const handleTabClick = (tab) => {
-    setActiveTab(tab);
+    setFormData({ id: null, type: "", days: null, price: null });
+    setShowForm(true);
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-800 mb-6">{title}</h2>
+    <div className="space-y-4">
+      {/* HEADER */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 className="text-[20px] lg:text-[34px] font-bold text-gray-900 tracking-[-0.02em] leading-[1.2]">
+            {title}
+          </h2>
+          <p className="text-[15px] font-medium text-gray-500 mt-1.5 leading-[1.6]">
+            Manage subscription plans for banners, chairs, and other listings.
+          </p>
+        </div>
 
-        {/* Error Message */}
+        <button
+          type="button"
+          onClick={handleAddNewClick}
+          className="inline-flex items-center justify-center px-4 py-2.5 h-12 rounded-xl text-[14px] font-semibold text-white bg-gradient-to-r from-[var(--brand-purple)] to-[var(--brand-purple-dark)] shadow-sm hover:brightness-110 active:scale-[0.98] transition-all duration-200 cursor-pointer whitespace-nowrap"
+        >
+          Add Subscription
+        </button>
+      </div>
+
+      {/* TABLE */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-[var(--shadow-card)] overflow-hidden">
         {error ? (
-          <div className="text-red-600 bg-red-50 border border-red-200 p-4 rounded-md mb-4">
-            ⚠️ Failed to load Subscriptions: {error}
+          <div className="py-16 text-center text-sm text-red-500">
+            Failed to load subscriptions: {error}
           </div>
         ) : loading ? (
-          <div className="flex items-center justify-center py-10 text-gray-500">
-            <svg
-              className="animate-spin h-5 w-5 text-purple-500 mr-2"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8v8H4z"
-              />
-            </svg>
-            Loading Subscriptions...
+          <div className="py-16 text-center text-sm text-gray-400">
+            Loading subscriptions…
           </div>
         ) : (
-          <div>
-            {/* Tab Navigation */}
-            <div className="flex border-b border-gray-200 mb-6">
-              <button
-                style={{ cursor: "pointer" }}
-                className={`px-4 py-2 font-medium text-sm rounded-t-lg mr-2 ${
-                  activeTab === "table"
-                    ? "bg-white border border-gray-200 border-b-white text-blue-600"
-                    : "bg-gray-50 border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-                }`}
-                onClick={() => handleTabClick("table")}
-              >
-                {title === "Subscription" && "Subscriptions"}
-              </button>
-              <button
-                style={{ cursor: "pointer" }}
-                className={`px-4 py-2 font-medium text-sm rounded-t-lg ${
-                  activeTab === "form"
-                    ? "bg-white border border-gray-200 border-b-white text-blue-600"
-                    : "bg-gray-50 border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-                }`}
-                onClick={() => handleTabClick("form")}
-              >
-                {formData.id
-                  ? `Edit ${title === "Subscription" && "Subscription"}`
-                  : `Add New ${title === "Subscription" && "Subscription"}`}
-              </button>
-            </div>
-
-            {/* Tab Content */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-              {activeTab === "form" ? (
-                <div className="p-6">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4">
-                    {formData.id ? `Edit ${title} ` : `Add New ${title}`}
-                  </h3>
-                  <SubscriptionForm
-                    defaultValues={formData}
-                    onSubmit={formData.id ? handleUpdateData : handleAddData}
-                    onCancel={() => {
-                      clearForm();
-                      setActiveTab("table");
-                    }}
-                  />
-                </div>
-              ) : (
-                <div>
-                  <div className="p-4 border-b border-gray-100">
-                    <button
-                      style={{ cursor: "pointer" }}
-                      className="px-4 py-2 bg-black text-white rounded-lg text-sm font-medium hover:bg-black"
-                      onClick={handleAddNewClick}
-                    >
-                      Add New {title === "Subscription" && "Subscription"}
-                    </button>
-                  </div>
-                  <SubscriptionTable
-                    data={data}
-                    title={title}
-                    onEdit={handleEditClick}
-                    // onDelete={handleDeleteData}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
+          <SubscriptionTable
+            data={allSubscriptionsList || []}
+            title={title}
+            onEdit={handleEditClick}
+          />
         )}
       </div>
+
+      {/* MODAL */}
+      <Modal
+        open={showForm}
+        onClose={() => setShowForm(false)}
+        title={isEdit ? "Edit Subscription" : "Add Subscription"}
+      >
+        <SubscriptionForm
+          defaultValues={formData}
+          loading={submitting}
+          onSubmit={handleFormSubmit}
+          onCancel={() => setShowForm(false)}
+        />
+      </Modal>
     </div>
   );
 };

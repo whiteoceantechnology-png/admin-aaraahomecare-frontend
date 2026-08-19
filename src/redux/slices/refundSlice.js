@@ -1,6 +1,5 @@
-
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import api from "../../utils/api";
+import { fetchAllRefunds, editRefundRequest } from "./refundApi";
 
 
 
@@ -9,12 +8,7 @@ export const getAllRefundsList = createAsyncThunk(
   "allRefunds/getAllRefundsList",
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/app/getrefundrequets", {},{
-        headers: {
-          "Content-Type": "application/json", // optional in GET, but included here per request
-        },
-        withCredentials: false,
-      });
+      const response = await fetchAllRefunds();
       return response.data.data;
     } catch (error) {
       const message =
@@ -31,12 +25,7 @@ export const updateRefundRequest = createAsyncThunk(
   "allRefunds/updaterefundrequest",
   async ({ id, status }, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/app/updaterefundrequest", { id, status }, {
-        headers: {
-          "Content-Type": "application/json", // optional in GET, but included here per request
-        },
-        withCredentials: false,
-      });
+      const response = await editRefundRequest({ id, status });
       return response.data.data;
     } catch (error) {
       const message =
@@ -90,15 +79,15 @@ const allRefundsSlice = createSlice({
       })
       .addCase(updateRefundRequest.fulfilled, (state) => {
         state.loading = false;
-        
-        
+
+
       })
       .addCase(updateRefundRequest.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload || "Failed to update refund request";
       });
 
-                    
+
   },
 });
 

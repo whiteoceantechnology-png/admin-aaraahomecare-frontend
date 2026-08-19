@@ -1,15 +1,12 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import api from "../../utils/api";
+import { createAdmin, fetchAdminList } from "./adminApi";
 
 // Add admin
 export const addAdmin = createAsyncThunk(
   "admin/addAdmin",
   async (adminData, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/school/addAdmin", adminData, {
-        // headers: { "Content-Type": "application/json" },
-        withCredentials: false,
-      });
+      const response = await createAdmin(adminData);
       return response.data.data;
     } catch (error) {
       const message =
@@ -26,12 +23,7 @@ export const getAdmin = createAsyncThunk(
   "admin/getAdmin",
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.get("/admin/school/listAdmin", {
-        headers: {
-          "Content-Type": "application/json",
-        },
-        withCredentials: false,
-      });
+      const response = await fetchAdminList();
       return response.data.data;
     } catch (error) {
       const message =

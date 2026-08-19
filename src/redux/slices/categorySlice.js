@@ -1,100 +1,97 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import api from "../../utils/api";
+import {
+  fetchCategories,
+  createCategory,
+  editCategory,
+  removeCategory,
+  importCategoriesFile,
+} from "./categoryApi";
 
 /* ================= GET ALL ================= */
-
 export const getAllCategoryList = createAsyncThunk(
-  "allCategory/getAllCategoryList",
+  "category/getAll",
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.get("/admin/categories");
-      return response.data.data;
-    } catch (error) {
-      return rejectWithValue(
-        error.response?.data?.message || "Failed to fetch categories"
-      );
+      const res = await fetchCategories();
+      return res.data.data;
+    } catch (err) {
+      return rejectWithValue(err.response?.data?.message || "Failed to fetch");
     }
-  }
+  },
 );
 
 /* ================= ADD ================= */
-
 export const addCategory = createAsyncThunk(
-  "allCategory/addCategory",
-  async (data, { rejectWithValue }) => {
+  "category/add",
+  async (payload, { rejectWithValue }) => {
     try {
-      const response = await api.post("/admin/categories", data);
-      return response.data.data;
-    } catch (error) {
-      return rejectWithValue(
-        error.response?.data?.message || "Failed to add category"
-      );
+      const res = await createCategory(payload);
+      return res.data.data;
+    } catch (err) {
+      return rejectWithValue(err.response?.data?.message || "Failed to add");
     }
   }
 );
-
 /* ================= UPDATE ================= */
-
 export const updateCategory = createAsyncThunk(
-  "allCategory/updateCategory",
+  "category/update",
   async ({ id, data }, { rejectWithValue }) => {
     try {
-      const response = await api.put(`/admin/categories/${id}`, data);
-      return response.data.data;
-    } catch (error) {
-      return rejectWithValue(
-        error.response?.data?.message || "Failed to update category"
-      );
+      const res = await editCategory(id, data);
+      return res.data.data;
+    } catch (err) {
+      return rejectWithValue(err.response?.data?.message || "Failed to update");
     }
   }
 );
 
 /* ================= DELETE ================= */
-
 export const deleteCategory = createAsyncThunk(
-  "allCategory/deleteCategory",
+  "category/delete",
   async (id, { rejectWithValue }) => {
     try {
-      await api.delete(`/admin/categories/${id}`);
-      return id; // only id return pannuvom
-    } catch (error) {
+      await removeCategory(id);
+      return id;
+    } catch (err) {
+      return rejectWithValue(err.response?.data?.message || "Failed to delete");
+    }
+  },
+);
+
+/* ================= BULK IMPORT (xlsx/xls) ================= */
+export const importCategories = createAsyncThunk(
+  "category/import",
+  async (file, { rejectWithValue }) => {
+    try {
+      const res = await importCategoriesFile(file);
+      return res.data;
+    } catch (err) {
       return rejectWithValue(
-        error.response?.data?.message || "Failed to delete category"
+        err.response?.data?.message || "Failed to import categories",
       );
     }
   }
 );
 
-/* ================= INITIAL STATE ================= */
-
+/* ================= STATE ================= */
 const initialState = {
   loading: false,
+  importing: false,
   error: null,
-  success: false,
   allCategoryList: [],
 };
 
 /* ================= SLICE ================= */
-
-const allCategorySlice = createSlice({
-  name: "allCategory",
+const categorySlice = createSlice({
+  name: "category",
   initialState,
-
-  reducers: {
-    resetAllCategoryState: (state) => {
-      state.loading = false;
-      state.error = null;
-      state.success = false;
-    },
-  },
+  reducers: {},
 
   extraReducers: (builder) => {
     builder
-
-      /* ===== GET ===== */
+      /* GET */
       .addCase(getAllCategoryList.pending, (state) => {
         state.loading = true;
-        state.error = null;
       })
       .addCase(getAllCategoryList.fulfilled, (state, action) => {
         state.loading = false;
@@ -105,57 +102,36 @@ const allCategorySlice = createSlice({
         state.error = action.payload;
       })
 
-      /* ===== ADD ===== */
-      .addCase(addCategory.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
+      /* ADD */
       .addCase(addCategory.fulfilled, (state, action) => {
-        state.loading = false;
-
-        // 🔥 instantly add to UI (no reload)
         state.allCategoryList.unshift(action.payload);
       })
-      .addCase(addCategory.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload;
-      })
 
-      /* ===== UPDATE ===== */
-      .addCase(updateCategory.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
+      /* UPDATE */
       .addCase(updateCategory.fulfilled, (state, action) => {
-        state.loading = false;
-
         state.allCategoryList = state.allCategoryList.map((item) =>
-          item.id === action.payload.id ? action.payload : item
+          item.id === action.payload.id ? action.payload : item,
         );
       })
-      .addCase(updateCategory.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload;
-      })
 
-      /* ===== DELETE ===== */
-      .addCase(deleteCategory.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
+      /* DELETE */
       .addCase(deleteCategory.fulfilled, (state, action) => {
-        state.loading = false;
-
         state.allCategoryList = state.allCategoryList.filter(
-          (item) => item.id !== action.payload
+          (item) => item.id !== action.payload,
         );
       })
-      .addCase(deleteCategory.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload;
+
+      /* IMPORT */
+      .addCase(importCategories.pending, (state) => {
+        state.importing = true;
+      })
+      .addCase(importCategories.fulfilled, (state) => {
+        state.importing = false;
+      })
+      .addCase(importCategories.rejected, (state) => {
+        state.importing = false;
       });
   },
 });
 
-export const { resetAllCategoryState } = allCategorySlice.actions;
-export default allCategorySlice.reducer;
+export default categorySlice.reducer;

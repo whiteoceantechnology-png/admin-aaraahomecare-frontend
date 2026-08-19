@@ -1,423 +1,490 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo } from "react";
+import { useDispatch, useSelector } from "react-redux";
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  LineChart,
-  Line,
-} from "recharts";
-import {
-  Users,
-  Store,
+  Wallet,
+  ShoppingCart,
   TrendingUp,
-  Calendar,
-  Mail,
-  Phone,
-  UserCheck,
-  TrendingDown,
+  Clock,
+  PackageX,
+  Inbox,
+  ArrowRight,
+  MapPinOff,
+  Percent,
+  BadgeAlert,
+  ChevronRight,
 } from "lucide-react";
-import { FaRegMoneyBillAlt, FaMale, FaFemale } from "react-icons/fa";
-import { Swiper, SwiperSlide } from "swiper/react";
-import { Autoplay } from "swiper/modules";
-import { Link } from "react-router-dom";
-import "swiper/css";
-import "swiper/css/autoplay";
+import { Link, useNavigate } from "react-router-dom";
 
-const COLORS = [
-  "#0088FE",
-  "#00C49F",
-  "#FFBB28",
-  "#FF8042",
-  "#3B82F6",
-  "#10B981",
-  "#EC4899",
-];
+import { getAllTaxes } from "../../redux/slices/taxSlice";
+import { getAllOrders } from "../../redux/slices/orderSlice";
+import { getAllProducts } from "../../redux/slices/productSlice";
+import { getAllVariants } from "../../redux/slices/variantSlice";
+import { formatDate } from "../../utils/formatDate";
 
-const DashboardDetail = ({ data }) => {
-  // Chart State
-  const [viewType, setViewType] = useState("monthly");
-  const [selectedMetric, setSelectedMetric] = useState("revenue");
-  const [selectedYear, setSelectedYear] = useState("2025");
-  const [selectedMonth, setSelectedMonth] = useState("10");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
-  const [selectedStatus, setSelectedStatus] = useState("all");
-  const [selectedSalon, setSelectedSalon] = useState("all");
-  const [selectedCategory, setSelectedCategory] = useState("all");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [searchName, setSearchName] = useState("");
-  const [searchEmail, setSearchEmail] = useState("");
-  const [searchLocation, setSearchLocation] = useState("");
+// A variant at or below this stock count is surfaced on the Low Stock panel.
+// The backend has no configurable per-variant threshold today, so this is a
+// fixed, documented client-side cutoff rather than a real API value.
+const LOW_STOCK_THRESHOLD = 10;
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [selectedStatus]);
+const STATUS_META = {
+  good: { dot: "bg-emerald-500", bar: "bg-emerald-500", badge: "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20" },
+  warning: { dot: "bg-amber-500", bar: "bg-amber-500", badge: "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/20" },
+  critical: { dot: "bg-red-500", bar: "bg-red-500", badge: "bg-red-50 text-red-700 ring-1 ring-inset ring-red-600/20" },
+  info: { dot: "bg-blue-500", bar: "bg-blue-500", badge: "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/20" },
+  neutral: { dot: "bg-gray-300", bar: "bg-gray-300", badge: "bg-gray-100 text-gray-500 ring-1 ring-inset ring-gray-300/40" },
+};
 
-  // Fallback sample/demo data
-  const dailyData = data?.dailyRevenue || [
-    ...Array.from({ length: 31 }, (_, i) => ({
-      day: `2024-10-${(i + 1).toString().padStart(2, "0")}`,
-      revenue: 70,
-      appointment_count: 7,
-      salon_id: 1,
-      category: "Haircut",
-    })),
-    ...Array.from({ length: 30 }, (_, i) => ({
-      day: `2025-09-${(i + 1).toString().padStart(2, "0")}`,
-      revenue: 90,
-      appointment_count: 9,
-      salon_id: 1,
-      category: "Coloring",
-    })),
-    {
-      day: "2025-10-01",
-      revenue: 200,
-      appointment_count: 20,
-      salon_id: 1,
-      category: "Haircut",
-    },
-    {
-      day: "2025-10-02",
-      revenue: 150,
-      appointment_count: 15,
-      salon_id: 2,
-      category: "Coloring",
-    },
-    // ... (rest of daily sample data)
-  ];
+const GOOD_STATUSES = ["COMPLETED", "DELIVERED", "PAID", "SUCCESS", "CONFIRMED"];
+const WARNING_STATUSES = ["PENDING_PAYMENT", "PENDING", "PROCESSING", "AWAITING_PAYMENT"];
+const INFO_STATUSES = ["PACKED", "SHIPPED"];
+const CRITICAL_STATUSES = ["CANCELLED", "FAILED", "REJECTED", "REFUNDED"];
 
-  // Metric calculations
-  const getMonthRevenue = (year, month) => {
-    return dailyData
-      .filter((item) => {
-        const [y, m] = item.day.substring(0, 7).split("-");
-        return parseInt(y) === year && parseInt(m) === month;
-      })
-      .reduce((sum, item) => sum + item.revenue, 0);
-  };
+const getStatusKey = (status) => {
+  const normalized = (status || "").toUpperCase();
+  if (GOOD_STATUSES.includes(normalized)) return "good";
+  if (WARNING_STATUSES.includes(normalized)) return "warning";
+  if (INFO_STATUSES.includes(normalized)) return "info";
+  if (CRITICAL_STATUSES.includes(normalized)) return "critical";
+  return "neutral";
+};
 
-  const currentYear = parseInt(selectedYear);
-  const currentMonth = parseInt(selectedMonth);
-  let prevMonth = currentMonth - 1;
-  let prevYear = currentYear;
-  if (prevMonth === 0) {
-    prevMonth = 12;
-    prevYear -= 1;
-  }
-  const currentRev = getMonthRevenue(currentYear, currentMonth);
-  const prevRev = getMonthRevenue(prevYear, prevMonth);
-  const revenueGrowth =
-    prevRev > 0 ? (((currentRev - prevRev) / prevRev) * 100).toFixed(1) : 0;
-  const revenueGrowthLabel = `${
-    revenueGrowth >= 0 ? "+" : ""
-  }${revenueGrowth}% vs last month`;
+const formatStatus = (status) =>
+  (status || "")
+    .toLowerCase()
+    .split("_")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ") || "Unknown";
 
-  // Metric name
-  const metricName =
-    selectedMetric === "revenue" ? "Revenue" : "Appointment Count";
+const formatCompactNumber = (value) => {
+  const num = Number(value) || 0;
+  return new Intl.NumberFormat("en-IN", { notation: "compact", maximumFractionDigits: 1 }).format(num);
+};
 
-  // Aggregation functions
-  const aggregateMonthly = (filteredDaily, metric) => {
-    const monthly = {};
-    filteredDaily.forEach((item) => {
-      const yearMonth = item.day.substring(0, 7);
-      if (!monthly[yearMonth]) monthly[yearMonth] = 0;
-      monthly[yearMonth] += item[metric];
-    });
-    return Object.entries(monthly)
-      .map(([month, value]) => ({ month, [metric]: Math.round(value) }))
-      .sort((a, b) => a.month.localeCompare(b.month));
-  };
+const formatMoney = (value) =>
+  `₹${(Number(value) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-  const aggregateYearly = (filteredDaily, metric) => {
-    const yearly = {};
-    filteredDaily.forEach((item) => {
-      const year = item.day.substring(0, 4);
-      if (!yearly[year]) yearly[year] = 0;
-      yearly[year] += item[metric];
-    });
-    return Object.entries(yearly)
-      .map(([year, value]) => ({ year, [metric]: Math.round(value) }))
-      .sort((a, b) => parseInt(a.year) - parseInt(b.year));
-  };
+const EmptyState = ({ icon: Icon = Inbox, message = "No data available" }) => (
+  <div className="flex flex-col items-center justify-center py-10 text-center">
+    <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-50 text-gray-300 mb-2">
+      <Icon size={18} />
+    </div>
+    <p className="text-sm text-gray-400">{message}</p>
+  </div>
+);
 
-  // Filters
-  let filteredDaily = [...dailyData];
-  if (
-    (viewType === "monthly" || viewType === "daily") &&
-    selectedYear !== "all"
-  ) {
-    filteredDaily = dailyData.filter((item) =>
-      item.day.startsWith(selectedYear),
-    );
-  }
-  if (viewType === "daily") {
-    filteredDaily = filteredDaily.filter(
-      (item) => item.day.substring(5, 7) === selectedMonth,
-    );
-  }
-  if (viewType === "specific" && fromDate && toDate) {
-    filteredDaily = dailyData.filter((item) => {
-      const itemDate = new Date(item.day);
-      const from = new Date(fromDate);
-      const to = new Date(toDate);
-      return itemDate >= from && itemDate <= to;
-    });
-  }
-  if (selectedSalon !== "all") {
-    filteredDaily = filteredDaily.filter(
-      (item) => item.salon_id === parseInt(selectedSalon),
-    );
-  }
-  if (selectedCategory !== "all") {
-    filteredDaily = filteredDaily.filter(
-      (item) => item.category === selectedCategory,
-    );
+const KPI_TONE = {
+  emerald: "bg-emerald-50 text-emerald-600",
+  purple: "bg-[var(--brand-purple)]/10 text-[var(--brand-purple)]",
+  blue: "bg-blue-50 text-blue-600",
+  amber: "bg-amber-50 text-amber-600",
+  red: "bg-red-50 text-red-600",
+};
+
+const KpiCard = ({ label, value, displayValue, prefix, icon: Icon, tone, note, delay = 0 }) => (
+  <div
+    className="animate-fade-in-up bg-white rounded-2xl border border-gray-100 shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] transition-shadow duration-300 p-4"
+    style={{ animationDelay: `${delay}ms` }}
+  >
+    <div className="flex items-start justify-between gap-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{label}</span>
+      <span className={`flex items-center justify-center w-9 h-9 rounded-[10px] shrink-0 ${KPI_TONE[tone]}`}>
+        <Icon size={17} />
+      </span>
+    </div>
+    <p className="mt-2.5 flex items-baseline gap-0.5 text-[26px] font-bold text-gray-900 tracking-[-0.02em]" title={String(value)}>
+      {prefix && <span className="text-[15px] font-semibold text-gray-500 shrink-0">{prefix}</span>}
+      <span className="truncate">{displayValue ?? value}</span>
+    </p>
+    <p className="mt-1.5 text-[12px] text-gray-400 min-h-[16px]">{note}</p>
+  </div>
+);
+
+const SectionCard = ({ title, action, children, className = "" }) => (
+  <div className={`animate-fade-in-up bg-white rounded-2xl border border-gray-100 shadow-[var(--shadow-card)] p-5 ${className}`}>
+    <div className="flex items-center justify-between mb-4 gap-3">
+      <h3 className="text-[16px] font-semibold text-gray-900">{title}</h3>
+      {action}
+    </div>
+    {children}
+  </div>
+);
+
+// Simple honest area/line sparkline over the recent orders the dashboard API
+// already returns — no fabricated "collected vs GMV" series, since the
+// backend doesn't distinguish captured payments from order totals yet.
+const OrderTrendChart = ({ orders }) => {
+  const points = useMemo(() => {
+    const withDates = orders
+      .filter((o) => o?.createdAt)
+      .slice()
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    return withDates.map((o) => ({
+      date: o.createdAt,
+      amount: Number(o.totalAmount) || 0,
+    }));
+  }, [orders]);
+
+  if (points.length < 2) {
+    return <EmptyState icon={TrendingUp} message="Not enough recent orders to plot a trend yet" />;
   }
 
-  // Chart data logic
-  let chartData = [];
-  let xKey = "day";
-  let yKey = selectedMetric;
-  let labelFormatter = (label) => new Date(label).toLocaleDateString();
-  let xTickFormatter = (value) => value;
-
-  switch (viewType) {
-    case "daily":
-      chartData = filteredDaily;
-      xKey = "day";
-      labelFormatter = (label) =>
-        new Date(label).toLocaleDateString("en-US", {
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-        });
-      xTickFormatter = (value) => new Date(value).getDate();
-      break;
-    case "monthly":
-      chartData = aggregateMonthly(filteredDaily, selectedMetric);
-      xKey = "month";
-      labelFormatter = (label) => {
-        const date = new Date(`${label}-01`);
-        return date.toLocaleString("default", {
-          month: "long",
-          year: "numeric",
-        });
-      };
-      xTickFormatter = (value) =>
-        new Date(`${value}-01`).toLocaleDateString("en-US", { month: "short" });
-      break;
-    case "yearly":
-      const yearlyFiltered =
-        selectedYear === "all"
-          ? filteredDaily
-          : filteredDaily.filter((item) => item.day.startsWith(selectedYear));
-      chartData = aggregateYearly(yearlyFiltered, selectedMetric);
-      xKey = "year";
-      labelFormatter = (label) => label;
-      xTickFormatter = (value) => value;
-      break;
-    case "specific":
-      chartData = filteredDaily;
-      xKey = "day";
-      labelFormatter = (label) => new Date(label).toLocaleDateString();
-      xTickFormatter = (value) => new Date(value).getDate();
-      break;
-    default:
-      chartData = aggregateMonthly(dailyData, selectedMetric);
-      xTickFormatter = (value) =>
-        new Date(`${value}-01`).toLocaleDateString("en-US", { month: "short" });
-  }
-
-  // Category chart data from prop, with fallback
-  const categoryData = (data?.sales_by_category || [])
-    .filter((item) => item?.total_sales !== null)
-    .map((item) => ({
-      category: item?.category,
-      sales: parseInt(item?.total_sales),
-    })) || [
-    { category: "Electronics", sales: 400 },
-    { category: "Clothing", sales: 300 },
-    { category: "Books", sales: 300 },
-    { category: "Home & Garden", sales: 200 },
-  ];
-
-  // Metric Card Component
-  const MetricCard = ({ title, value, icon: Icon, color, subtitle }) => {
-    const growthColor =
-      subtitle && typeof subtitle === "string"
-        ? subtitle.includes("% vs last month")
-          ? subtitle.includes("+") ||
-            parseFloat(subtitle.replace("% vs last month", "")) >= 0
-            ? "text-green-600"
-            : "text-red-600"
-          : "text-gray-500"
-        : "text-gray-500";
-    return (
-      <div
-        className="bg-white rounded-lg shadow-md p-4 lg:p-6 border-l-4"
-        style={{ borderLeftColor: color }}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex-1 min-w-0">
-            <p className="text-xs lg:text-sm font-medium text-gray-600 truncate">
-              {title}
-            </p>
-            <p className="text-lg lg:text-2xl font-bold text-gray-900 truncate">
-              {value}
-            </p>
-            {subtitle && (
-              <p className={`text-xs ${growthColor} mt-1 truncate font-medium`}>
-                {subtitle}
-              </p>
-            )}
-          </div>
-          <Icon
-            className="h-6 w-6 lg:h-8 lg:w-8 flex-shrink-0 ml-2"
-            style={{ color }}
-          />
-        </div>
-      </div>
-    );
-  };
-
-  // Month selection options
-  const monthOptions = Array.from({ length: 12 }, (_, i) => {
-    const month = String(i + 1).padStart(2, "0");
-    const date = new Date(2025, i, 1);
-    return {
-      value: month,
-      label: date.toLocaleString("default", { month: "long" }),
-    };
-  });
-
-  // Salon status filtering
-  // const filteredSalons = (data?.top_saloons || []).filter(
-  //   (salon) => selectedStatus === "all" || salon.status === selectedStatus
-  // );
-  const resetFilters = () => {
-    setSearchName("");
-    setSearchEmail("");
-    setSearchLocation("");
-    setSelectedStatus("all");
-  };
-  const filteredSalons = (data?.top_saloons || []).filter((salon) => {
-    const matchStatus =
-      selectedStatus === "all" || salon?.status === selectedStatus;
-
-    // Check if there are any active search filters
-    const hasSearch =
-      searchName.trim() !== "" ||
-      searchEmail.trim() !== "" ||
-      searchLocation.trim() !== "";
-
-    // If no search filters, just filter by status
-    if (!hasSearch) {
-      return matchStatus;
-    }
-
-    // Safe lowercasing & matching (avoid null/undefined errors)
-    const name = salon?.name?.toLowerCase() || "";
-    const email = salon?.email?.toLowerCase() || "";
-    const location = salon?.cityLocation?.toLowerCase() || "";
-
-    const matchName = name.includes(searchName.toLowerCase());
-    const matchEmail = email.includes(searchEmail.toLowerCase());
-    const matchLocation = location.includes(searchLocation.toLowerCase());
-
-    return matchStatus && matchName && matchEmail && matchLocation;
-  });
-  const indexOfLastRecord = currentPage * rowsPerPage;
-  const indexOfFirstRecord = indexOfLastRecord - rowsPerPage;
-  const currentSalons = filteredSalons.slice(
-    indexOfFirstRecord,
-    indexOfLastRecord,
-  );
-  const totalPages = Math.ceil(filteredSalons.length / rowsPerPage);
-
-  // Date strings formatting
-  const formatDate = (dateString) => {
-    if (!dateString) return "-";
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  };
-
-  // Placeholder API toggle
-  const toggleSalonStatus = (salonId, currentStatus) => {
-    const newStatus = currentStatus === "active" ? "inactive" : "active";
-    // TODO: Implement API call here
-    alert(`Salon status toggled to ${newStatus.toUpperCase()}`);
-  };
-
-  // View type change handler
-  const handleViewTypeChange = (e) => {
-    const newView = e.target.value;
-    setViewType(newView);
-    setSelectedYear("2025");
-    setSelectedMonth("10");
-    setFromDate("");
-    setToDate("");
-    if (newView === "specific") {
-      const now = new Date();
-      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
-        .toISOString()
-        .split("T")[0];
-      const todayStr = now.toISOString().split("T")[0];
-      setFromDate(firstDay);
-      setToDate(todayStr);
-    }
-  };
+  const W = 640, H = 200, padL = 44, padR = 12, padT = 12, padB = 26;
+  const iw = W - padL - padR, ih = H - padT - padB;
+  const maxY = Math.max(...points.map((p) => p.amount), 10) * 1.15;
+  const x = (i) => padL + (points.length === 1 ? iw / 2 : (i * iw) / (points.length - 1));
+  const y = (v) => padT + ih - (v / maxY) * ih;
+  const pathPts = points.map((p, i) => `${x(i)},${y(p.amount)}`).join(" ");
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div>
-        {/* Key Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
-          <MetricCard
-            title="Total Orders"
-            value={data?.total_orders || 0}
-            icon={Store}
-            color="#10B981"
-          />
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[200px]" preserveAspectRatio="none" role="img" aria-label="Recent order amounts over time">
+      {[0, 1, 2, 3].map((g) => {
+        const val = (maxY * g) / 3;
+        const yy = y(val);
+        return (
+          <g key={g}>
+            <line x1={padL} x2={W - padR} y1={yy} y2={yy} stroke="#E4E7EE" strokeWidth="1" />
+            <text x={padL - 6} y={yy + 4} textAnchor="end" fontSize="10" fill="#8A91A5">
+              {val >= 1000 ? `${(val / 1000).toFixed(1)}k` : Math.round(val)}
+            </text>
+          </g>
+        );
+      })}
+      <polygon points={`${x(0)},${y(0)} ${pathPts} ${x(points.length - 1)},${y(0)}`} fill="#443C8E" opacity="0.08" />
+      <polyline points={pathPts} fill="none" stroke="#443C8E" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+      {points.map((p, i) => (
+        <circle key={i} cx={x(i)} cy={y(p.amount)} r="3.5" fill="#fff" stroke="#443C8E" strokeWidth="2">
+          <title>{`${formatDate(p.date)} — ${formatMoney(p.amount)}`}</title>
+        </circle>
+      ))}
+    </svg>
+  );
+};
 
-          <MetricCard
-            title="Total Customers"
-            value={data?.total_customers || 0}
-            icon={Users}
-            color="#F43F5E"
-          />
+const DashboardDetail = ({ data }) => {
+  const dispatch = useDispatch();
+  const navigate = useNavigate();
 
-          <MetricCard
-            title="Total Products"
-            value={data?.total_products || 0}
-            icon={TrendingUp}
-            color="#F59E0B"
-          />
+  const ordersByStatus = data?.ordersByStatus || [];
 
-          <MetricCard
-            title="Pending Orders"
-            value={data?.pending_orders || 0}
-            icon={Calendar}
-            color="#0EA5E9"
-          />
+  const { taxes = [] } = useSelector((state) => state.taxes || {});
+  const { allOrders = [] } = useSelector((state) => state.order || {});
+  const { products = [] } = useSelector((state) => state.product || {});
+  const { variants = [] } = useSelector((state) => state.variant || {});
 
-          <MetricCard
-            title="Total Revenue"
-            value={`₹${data?.total_revenue || 0}`}
-            icon={FaRegMoneyBillAlt}
-            color="#EF4444"
-          />
+  // Cross-reference against real data already used by their own pages —
+  // additive read-only fetches, same pattern as Category/ProductDetails pages.
+  useEffect(() => {
+    dispatch(getAllTaxes());
+    dispatch(getAllOrders());
+    dispatch(getAllProducts());
+    dispatch(getAllVariants());
+  }, [dispatch]);
+
+  // "Recent orders" reads from the same GET /admin/orders data the Orders
+  // list page already uses (state.order.allOrders, fetched above) instead of
+  // the separate /admin/dashboard aggregate's own `recentOrders` field — that
+  // field was coming back empty/absent, which silently rendered this whole
+  // section as "No data available" even though real order data exists.
+  const recentOrders = useMemo(
+    () =>
+      [...allOrders]
+        .filter((o) => o?.createdAt)
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        .slice(0, 8),
+    [allOrders],
+  );
+
+  const avgOrderValue = data.totalOrders > 0 ? data.totalRevenue / data.totalOrders : 0;
+
+  const totalStatusCount = ordersByStatus.reduce((sum, item) => sum + (item?.count ?? 0), 0);
+  const pipelineMax = Math.max(...ordersByStatus.map((s) => s?.count ?? 0), 1);
+
+  const lowStockVariants = useMemo(
+    () =>
+      variants
+        .filter((v) => Number(v?.stockQuantity) <= LOW_STOCK_THRESHOLD)
+        .sort((a, b) => Number(a.stockQuantity) - Number(b.stockQuantity)),
+    [variants],
+  );
+
+  const attentionItems = useMemo(() => {
+    const items = [];
+
+    const ordersMissingAddress = allOrders.filter((o) => !o?.addressSnapshot);
+    if (ordersMissingAddress.length > 0) {
+      items.push({
+        key: "missing-address",
+        severity: "high",
+        icon: MapPinOff,
+        title: "Orders missing shipping address",
+        meta: `${ordersMissingAddress[0]?.orderNumber || "1 order"} can't be fulfilled`,
+        count: ordersMissingAddress.length,
+        onClick: () => navigate(`/orders/${ordersMissingAddress[0].id}`),
+      });
+    }
+
+    const overpriced = products.filter(
+      (p) => p?.actualPrice != null && p?.discountPrice != null && Number(p.discountPrice) > Number(p.actualPrice),
+    );
+    if (overpriced.length > 0) {
+      items.push({
+        key: "over-mrp",
+        severity: "high",
+        icon: BadgeAlert,
+        title: "Product priced above MRP",
+        meta: `${overpriced[0]?.name} — ₹${overpriced[0]?.discountPrice} over ₹${overpriced[0]?.actualPrice}`,
+        count: overpriced.length,
+        onClick: () => navigate(`/products/${overpriced[0].id}`),
+      });
+    }
+
+    const percentMap = new Map();
+    taxes.forEach((t) => {
+      const pct = String(t?.percent);
+      if (!percentMap.has(pct)) percentMap.set(pct, []);
+      percentMap.get(pct).push(t);
+    });
+    const duplicateTaxGroups = [...percentMap.values()].filter((g) => g.length > 1);
+    if (duplicateTaxGroups.length > 0) {
+      const names = duplicateTaxGroups[0].map((t) => `"${t.name}"`).join(" and ");
+      items.push({
+        key: "duplicate-tax",
+        severity: "medium",
+        icon: Percent,
+        title: "Duplicate tax entries",
+        meta: `${names} are both ${duplicateTaxGroups[0][0].percent}%`,
+        count: duplicateTaxGroups.reduce((sum, g) => sum + g.length, 0),
+        onClick: () => navigate("/tax"),
+      });
+    }
+
+    return items;
+  }, [allOrders, products, taxes, navigate]);
+
+  return (
+    <div className="space-y-5 pb-4">
+      {/* KPI ROW */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-4">
+        <KpiCard
+          label="Revenue"
+          value={data.totalRevenue}
+          displayValue={formatMoney(data.totalRevenue)}
+          icon={Wallet}
+          tone="emerald"
+          note="total order value"
+          delay={0}
+        />
+        <KpiCard
+          label="Orders"
+          value={data.totalOrders}
+          displayValue={formatCompactNumber(data.totalOrders)}
+          icon={ShoppingCart}
+          tone="purple"
+          note="in this dataset"
+          delay={40}
+        />
+        <KpiCard
+          label="Avg order value"
+          value={avgOrderValue}
+          displayValue={formatMoney(avgOrderValue)}
+          icon={TrendingUp}
+          tone="blue"
+          note="revenue ÷ orders"
+          delay={80}
+        />
+        <KpiCard
+          label="Awaiting fulfillment"
+          value={data.pendingOrders}
+          displayValue={formatCompactNumber(data.pendingOrders)}
+          icon={Clock}
+          tone="amber"
+          note={`of ${data.totalOrders} orders`}
+          delay={120}
+        />
+        <KpiCard
+          label="Low stock"
+          value={lowStockVariants.length}
+          displayValue={formatCompactNumber(lowStockVariants.length)}
+          icon={PackageX}
+          tone="red"
+          note={`variants ≤ ${LOW_STOCK_THRESHOLD} units`}
+          delay={160}
+        />
+      </div>
+
+      {/* TREND + PIPELINE */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <SectionCard title="Recent order trend">
+          <OrderTrendChart orders={recentOrders} />
+        </SectionCard>
+
+        <SectionCard
+          title="Fulfillment pipeline"
+          action={
+            totalStatusCount > 0 && (
+              <span className="text-xs font-medium text-gray-400">{totalStatusCount} total</span>
+            )
+          }
+        >
+          {ordersByStatus.length > 0 ? (
+            <div className="space-y-3.5">
+              {ordersByStatus.map((item, index) => {
+                const key = getStatusKey(item?.status);
+                const widthPct = Math.round(((item?.count ?? 0) / pipelineMax) * 100);
+                return (
+                  <div key={item?.status || index} className="grid grid-cols-[88px_1fr_32px] items-center gap-3 text-[13px]">
+                    <span className="text-gray-600 font-medium truncate">{formatStatus(item?.status)}</span>
+                    <span className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                      <span
+                        className={`block h-full rounded-full transition-all duration-700 ease-out ${STATUS_META[key].bar}`}
+                        style={{ width: `${Math.max(widthPct, item?.count ? 2 : 0)}%` }}
+                      />
+                    </span>
+                    <span className="text-right font-semibold text-gray-700 tabular-nums">{item?.count ?? 0}</span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <EmptyState />
+          )}
+          <div className="pt-3 mt-3 border-t border-gray-100 flex items-center justify-between text-[13px] text-gray-500">
+            <span>{totalStatusCount} orders</span>
+            <Link to="/order" className="inline-flex items-center gap-1 font-medium text-[var(--brand-purple)] hover:text-[var(--brand-purple-dark)] transition-colors">
+              Manage orders <ArrowRight size={13} />
+            </Link>
+          </div>
+        </SectionCard>
+      </div>
+
+      {/* ORDERS TABLE + RIGHT STACK */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+        <SectionCard
+          title="Recent orders"
+          className="lg:col-span-2"
+          action={
+            <Link to="/order" className="inline-flex items-center gap-1 text-xs font-medium text-[var(--brand-purple)] hover:text-[var(--brand-purple-dark)] transition-colors">
+              View all <ArrowRight size={13} />
+            </Link>
+          }
+        >
+          {recentOrders.length > 0 ? (
+            <div className="overflow-x-auto -mx-1">
+              <table className="w-full min-w-[420px] text-[13px]">
+                <thead>
+                  <tr className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-100">
+                    <th className="px-1 pb-3">Order</th>
+                    <th className="px-1 pb-3">Date</th>
+                    <th className="px-1 pb-3">Status</th>
+                    <th className="px-1 pb-3 text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {recentOrders.map((order, index) => {
+                    const key = getStatusKey(order?.status);
+                    return (
+                      <tr
+                        key={order?.id ?? index}
+                        onClick={() => order?.id && navigate(`/orders/${order.id}`)}
+                        className="hover:bg-gray-50/80 transition-colors cursor-pointer"
+                      >
+                        <td className="px-1 py-3 text-gray-800 font-semibold">{order?.orderNumber || "—"}</td>
+                        <td className="px-1 py-3 text-gray-500">{formatDate(order?.createdAt)}</td>
+                        <td className="px-1 py-3">
+                          <span className={`px-2.5 py-1 inline-flex text-xs font-medium rounded-full ${STATUS_META[key].badge}`}>
+                            {formatStatus(order?.status)}
+                          </span>
+                        </td>
+                        <td className="px-1 py-3 text-right font-semibold text-gray-900 tabular-nums">
+                          {formatMoney(order?.totalAmount)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState />
+          )}
+        </SectionCard>
+
+        <div className="space-y-4">
+          {/* ATTENTION REQUIRED */}
+          <SectionCard title="Attention required">
+            {attentionItems.length === 0 ? (
+              <EmptyState icon={Inbox} message="No data-quality issues detected" />
+            ) : (
+              <div className="-mx-5 -mb-5 divide-y divide-gray-100">
+                {attentionItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={item.onClick}
+                      className="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-gray-50/80 transition-colors cursor-pointer"
+                    >
+                      <span
+                        className={`w-2 h-2 rounded-full shrink-0 ${
+                          item.severity === "high" ? "bg-red-500" : "bg-amber-500"
+                        }`}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[13.5px] font-medium text-gray-900 truncate">{item.title}</span>
+                        <span className="block text-[11.5px] text-gray-500 truncate mt-0.5">{item.meta}</span>
+                      </span>
+                      <span className="text-[11px] font-bold text-gray-700 bg-gray-100 border border-gray-200 rounded-full px-2 py-0.5 shrink-0">
+                        {item.count}
+                      </span>
+                      <ChevronRight size={15} className="text-gray-300 shrink-0" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </SectionCard>
+
+          {/* LOW STOCK */}
+          <SectionCard title="Low stock">
+            {lowStockVariants.length === 0 ? (
+              <EmptyState icon={PackageX} message="Every tracked variant is above the threshold" />
+            ) : (
+              <div className="-mx-5 -mb-5 divide-y divide-gray-100">
+                {lowStockVariants.slice(0, 4).map((v) => (
+                  <div key={v.id} className="flex items-center gap-3 px-5 py-3">
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13.5px] font-medium text-gray-900 truncate">{v.variantName}</span>
+                      <span className="block text-[11.5px] text-gray-500 truncate mt-0.5">
+                        {v.packSize?.label ? `${v.packSize.label} · ` : ""}SKU {v.sku || "—"}
+                      </span>
+                    </span>
+                    <span
+                      className={`text-[12px] font-bold px-2.5 py-1 rounded-full shrink-0 ${
+                        Number(v.stockQuantity) <= 5 ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"
+                      }`}
+                    >
+                      {v.stockQuantity ?? 0} left
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => navigate("/variant")}
+                      className="text-[12px] font-semibold text-[var(--brand-purple)] hover:text-[var(--brand-purple-dark)] transition-colors shrink-0 cursor-pointer"
+                    >
+                      Restock
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="pt-3 mt-3 border-t border-gray-100 flex items-center justify-between text-[13px] text-gray-500">
+              <span>{lowStockVariants.length} of {variants.length} variants tracked low</span>
+              <Link to="/variant" className="inline-flex items-center gap-1 font-medium text-[var(--brand-purple)] hover:text-[var(--brand-purple-dark)] transition-colors">
+                View inventory <ArrowRight size={13} />
+              </Link>
+            </div>
+          </SectionCard>
         </div>
       </div>
     </div>

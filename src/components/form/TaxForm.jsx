@@ -1,7 +1,26 @@
+// Tax add/edit fields — rendered inside the shared right-side Drawer (see
+// Tax.jsx), matching the Field/input styling used by ProductDetailDrawer.
+// The submit button lives in the Drawer's fixed footer (targets this form
+// via `form={formId}`), so this component only renders the field set.
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { Save, X } from "lucide-react";
 
-const TaxForm = ({ onSubmit, onCancel, defaultValues = {} }) => {
+const fldClass = (hasError) =>
+  `h-10 w-full px-3 rounded-lg border text-[14px] font-medium text-[var(--mk-ink-900)] placeholder:text-[var(--mk-ink-400)] bg-white outline-none transition-colors ${
+    hasError
+      ? "border-[var(--mk-dgr)] focus:ring-2 focus:ring-[var(--mk-dgr)]/15"
+      : "border-[var(--mk-line)] focus:ring-2 focus:ring-[var(--mk-primary-ring)] focus:border-[var(--mk-primary)]"
+  }`;
+
+const Field = ({ label, error, children }) => (
+  <div className="flex flex-col gap-1.5 mb-3.5">
+    <label className="text-[12.5px] font-medium text-[var(--mk-ink-700)]">{label}</label>
+    {children}
+    {error && <span className="text-[11.5px] font-medium text-[var(--mk-dgr)]">{error}</span>}
+  </div>
+);
+
+const TaxForm = ({ formId, onSubmit, defaultValues = {} }) => {
   const {
     register,
     handleSubmit,
@@ -9,98 +28,57 @@ const TaxForm = ({ onSubmit, onCancel, defaultValues = {} }) => {
     reset,
   } = useForm({
     defaultValues: {
-      taxName: defaultValues.taxName || "",
-      taxPercentage: defaultValues.taxPercentage ?? 0,
+      name: defaultValues.name || "",
+      percent: defaultValues.percent ?? "",
     },
   });
 
-  const onFormSubmit = (data) => {
-    const finalData = {
-      id: defaultValues.id || null,
-      taxName: data.taxName,
-      taxPercentage: Number(data.taxPercentage) || 0,
-      // Created / Updated backend or parent component handle pannalaam
-    };
+  useEffect(() => {
+    reset({
+      name: defaultValues.name || "",
+      percent: defaultValues.percent ?? "",
+    });
+  }, [defaultValues, reset]);
 
-    onSubmit(finalData);
-    reset();
+  const onFormSubmit = (data) => {
+    onSubmit({
+      id: defaultValues.id || null,
+      data: { name: data.name, percent: Number(data.percent) },
+    });
   };
 
   return (
-    <form
-      onSubmit={handleSubmit(onFormSubmit)}
-      className="grid grid-cols-1 md:grid-cols-2 gap-6"
-    >
-      {/* Tax Name */}
-      <div className="flex flex-col md:col-span-2">
-        <label className="text-sm font-medium text-gray-700 mb-1">
-          Tax Name
-        </label>
+    <form id={formId} onSubmit={handleSubmit(onFormSubmit)}>
+      <Field label="Tax Name" error={errors.name?.message}>
         <input
           type="text"
-          {...register("taxName", {
+          {...register("name", {
             required: "Tax name is required",
-            minLength: { value: 2, message: "Minimum 2 characters" },
+            minLength: { value: 2, message: "Tax name must be at least 2 characters" },
           })}
-          placeholder="Enter tax name (e.g. GST, VAT)"
-          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
-            errors.taxName
-              ? "border-red-500 focus:ring-red-500"
-              : "border-gray-300 focus:ring-blue-500"
-          }`}
+          placeholder="e.g. GST"
+          className={fldClass(errors.name)}
         />
-        {errors.taxName && (
-          <p className="text-sm text-red-500 mt-1">
-            {errors.taxName.message}
-          </p>
-        )}
-      </div>
+      </Field>
 
-      {/* Tax Percentage */}
-      <div className="flex flex-col md:col-span-2 md:max-w-xs">
-        <label className="text-sm font-medium text-gray-700 mb-1">
-          Tax Percentage
-        </label>
-        <input
-          type="number"
-          step="0.01"
-          {...register("taxPercentage", {
-            required: "Tax percentage is required",
-            min: { value: 0, message: "Min 0%" },
-            max: { value: 100, message: "Max 100%" },
-          })}
-          placeholder="e.g. 18"
-          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
-            errors.taxPercentage
-              ? "border-red-500 focus:ring-red-500"
-              : "border-gray-300 focus:ring-blue-500"
-          }`}
-        />
-        {errors.taxPercentage && (
-          <p className="text-sm text-red-500 mt-1">
-            {errors.taxPercentage.message}
-          </p>
-        )}
-      </div>
-
-      {/* Buttons */}
-      <div className="md:col-span-2 flex justify-end gap-3 pt-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="flex items-center cursor-pointer px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100"
-        >
-          <X size={16} className="mr-1" />
-          Cancel
-        </button>
-        <button
-          type="submit"
-          className="flex items-center cursor-pointer px-4 py-2 bg-black hover:bg-black text-white rounded-md"
-        >
-          <Save size={16} className="mr-1" />
-          {defaultValues.id ? "Update" : "Save"}
-        </button>
-      </div>
+      <Field label="Tax Percentage" error={errors.percent?.message}>
+        <div className="relative">
+          <input
+            type="number"
+            step="0.01"
+            {...register("percent", {
+              required: "Tax percentage is required",
+              min: { value: 0, message: "Must be 0 or greater" },
+              max: { value: 100, message: "Must be 100 or less" },
+            })}
+            placeholder="e.g. 18"
+            className={`${fldClass(errors.percent)} pr-9`}
+          />
+          <span className="absolute inset-y-0 right-3 flex items-center text-[13px] font-medium text-[var(--mk-ink-400)] pointer-events-none">
+            %
+          </span>
+        </div>
+      </Field>
     </form>
   );
 };

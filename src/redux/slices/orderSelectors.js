@@ -1,0 +1,9 @@
+export const selectOrderState = (state) => state.order;
+export const selectAllOrders = (state) => state.order.allOrders;
+export const selectOrderPagination = (state) => state.order.pagination;
+export const selectSelectedOrder = (state) => state.order.selectedOrder;
+export const selectOrderLoading = (state) => state.order.loading;
+export const selectOrderDetailLoading = (state) => state.order.detailLoading;
+export const selectOrderEvents = (state) => state.order.selectedOrderEvents;
+export const selectOrderEventsLoading = (state) => state.order.eventsLoading;
+export const selectOrderError = (state) => state.order.error;

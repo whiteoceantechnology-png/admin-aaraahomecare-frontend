@@ -1,278 +1,242 @@
-// src/components/data/Variant.jsx
-import { useEffect, useState } from "react";
-import VariantTable from "../table/VariantTable";
-import VariantForm from "../form/VariantForm";
+import { useEffect, useRef, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
 import { toast } from "react-hot-toast";
+import { Info } from "lucide-react";
+import {
+  getInventoryList,
+  getLowStockInventory,
+  clearSelectedInventory,
+} from "../../redux/slices/inventorySlice";
+import { getAllCategoryList } from "../../redux/slices/categorySlice";
 
-const Variant = ({ title }) => {
-  // Demo variant list (table data)
-  const [variants, setVariants] = useState([
-    {
-      id: 1,
-      productId: "P001",
-      productName: "Hydrating Face Serum",
-      tax: "GST 18%",
-      variantName: "30ml",
-      variantImage: ["serum-30ml.jpg"],
-      tags: ["hydrating", "dry skin"],
-      variantColor: "Transparent",
-      actualPrice: 999,
-      discountPrice: 799,
-      createdAt: "Dec 10, 2025, 10:15 AM",
-      updatedAt: "Dec 15, 2025, 03:20 PM",
-      status: "active",
-    },
-    {
-      id: 2,
-      productId: "P001",
-      productName: "Hydrating Face Serum",
-      tax: "GST 18%",
-      variantName: "50ml",
-      variantImage: ["serum-50ml.jpg"],
-      tags: ["hydrating", "glow"],
-      variantColor: "Transparent",
-      actualPrice: 1299,
-      discountPrice: 999,
-      createdAt: "Dec 11, 2025, 09:30 AM",
-      updatedAt: "Dec 16, 2025, 11:45 AM",
-      status: "active",
-    },
-    {
-      id: 3,
-      productId: "P010",
-      productName: "Matte Liquid Lipstick",
-      tax: "GST 18%",
-      variantName: "Rose Pink",
-      variantImage: ["lipstick-rose.jpg"],
-      tags: ["matte", "longwear"],
-      variantColor: "Rose Pink",
-      actualPrice: 699,
-      discountPrice: 499,
-      createdAt: "Dec 09, 2025, 05:10 PM",
-      updatedAt: "Dec 13, 2025, 06:25 PM",
-      status: "inactive",
-    },
-  ]);
+import VariantTable from "../table/VariantTable";
+import InventoryDetailDrawer from "../details/InventoryDetailDrawer";
+import ProductDetailDrawer from "../details/ProductDetailDrawer";
+import BulkStockUpdateModal from "../form/BulkStockUpdateModal";
 
-  // form state (single variant object)
-  const [formData, setFormData] = useState({
-    id: null,
-    productId: "",
-    productName: "",
-    tax: "",
-    variantName: "",
-    variantImage: [], // File[] or string[]
-    tags: [],
-    variantColor: "",
-    actualPrice: 0,
-    discountPrice: 0,
-  });
+const LOW_STOCK_THRESHOLD = 10;
+const SEARCH_DEBOUNCE_MS = 400;
 
-  const [activeTab, setActiveTab] = useState("table"); // "table" | "form"
-  const [loading, setLoading] = useState(true);
+// Stock Management — backed entirely by the dedicated GET/PUT/POST
+// /admin/inventory endpoints (list, low-stock, detail, update/adjust/
+// reserve/release, history, bulk-update). No product-derived or mocked
+// data: everything here is a real, paginated server response.
+const Variant = ({ title = "Inventory" }) => {
+  const dispatch = useDispatch();
+  const { items, meta, loading, error, lowStock } = useSelector((state) => state.inventory || {});
+  // Same category source Products already uses (getAllCategoryList /
+  // state.category.allCategoryList) — not a second implementation, just
+  // fetched here too since Inventory has to work standalone even if the
+  // admin never visited Products first in this session.
+  const { allCategoryList: categories = [] } = useSelector((state) => state.category || {});
+
+  const [searchInput, setSearchInput] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState(new Set());
+  const categoriesInitializedRef = useRef(false);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(25);
+
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [showBulkUpdate, setShowBulkUpdate] = useState(false);
+  const [viewingVariantId, setViewingVariantId] = useState(null);
+  const [viewingProductId, setViewingProductId] = useState(null);
 
   useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 800);
-    return () => clearTimeout(timer);
-  }, []);
+    dispatch(getAllCategoryList());
+  }, [dispatch]);
 
-  const handleDelete = (id) => {
-    const toastId = "delete-variant";
-    setVariants((prev) => prev.filter((item) => item.id !== id));
-    toast.success("Variant deleted!", { id: toastId });
-  };
-
-  const handleEdit = (item) => {
-    setFormData({
-      id: item.id,
-      productId: item.productId,
-      productName: item.productName,
-      tax: item.tax,
-      variantName: item.variantName,
-      variantImage: [], // existing images UI-ku மட்டும் use pannalaam
-      tags: item.tags || [],
-      variantColor: item.variantColor,
-      actualPrice: item.actualPrice,
-      discountPrice: item.discountPrice,
-    });
-    setActiveTab("form");
-  };
-
-  const handleAddNewClick = () => {
-    setFormData({
-      id: null,
-      productId: "",
-      productName: "",
-      tax: "",
-      variantName: "",
-      variantImage: [],
-      tags: [],
-      variantColor: "",
-      actualPrice: 0,
-      discountPrice: 0,
-    });
-    setActiveTab("form");
-  };
-
-  const handleFormSubmit = (finalData) => {
-    const toastId = "save-variant";
-
-    if (finalData.id) {
-      const now = new Date().toLocaleString("en-US", {
-        month: "short",
-        day: "2-digit",
-        year: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      });
-
-      setVariants((prev) =>
-        prev.map((v) =>
-          v.id === finalData.id
-            ? {
-                ...v,
-                productId: finalData.productId,
-                productName: finalData.productName,
-                tax: finalData.tax,
-                variantName: finalData.variantName,
-                tags: finalData.tags,
-                variantColor: finalData.variantColor,
-                actualPrice: Number(finalData.actualPrice) || 0,
-                discountPrice: Number(finalData.discountPrice) || 0,
-                updatedAt: now,
-              }
-            : v
-        )
-      );
-      toast.success("Variant updated!", { id: toastId });
-    } else {
-      const now = new Date().toLocaleString("en-US", {
-        month: "short",
-        day: "2-digit",
-        year: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      });
-
-      const newVariant = {
-        id: Date.now(),
-        productId: finalData.productId,
-        productName: finalData.productName,
-        tax: finalData.tax,
-        variantName: finalData.variantName,
-        variantImage:
-          finalData.variantImage?.map((f) => f.name) || ["demo-variant.jpg"],
-        tags: finalData.tags,
-        variantColor: finalData.variantColor,
-        actualPrice: Number(finalData.actualPrice) || 0,
-        discountPrice: Number(finalData.discountPrice) || 0,
-        createdAt: now,
-        updatedAt: now,
-        status: "active",
-      };
-
-      setVariants((prev) => [newVariant, ...prev]);
-      toast.success("Variant added!", { id: toastId });
+  // Same "start with every category selected" default Products uses, so
+  // the closed field reads "All Categories" until the admin narrows it.
+  useEffect(() => {
+    if (!categoriesInitializedRef.current && categories.length > 0) {
+      setSelectedCategoryIds(new Set(categories.map((c) => String(c.id))));
+      categoriesInitializedRef.current = true;
     }
+  }, [categories]);
 
-    setActiveTab("table");
+  // Debounce the search box — the list query re-fires SEARCH_DEBOUNCE_MS
+  // after the admin stops typing, not on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setSearchTerm(searchInput), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedCategoryIds, statusFilter, lowStockOnly]);
+
+  // Inventory rows carry no category info of their own (the real API
+  // response is {id, productId, productName, variantName, sku,
+  // stockQuantity, reservedQuantity, availableQuantity, status} — no
+  // category field), so unlike Products' client-side filter this has to be
+  // a real server-side param. Omitted entirely when every category is
+  // selected (== no filter), same as Products' "all selected" meaning.
+  // Comma-joining multiple ids is an unconfirmed assumption for the
+  // multi-select case — the single-category case (?categoryId=27) is the
+  // one actually confirmed against the backend.
+  const categoryIdParam = () =>
+    categories.length > 0 && selectedCategoryIds.size !== categories.length
+      ? Array.from(selectedCategoryIds).join(",")
+      : undefined;
+
+  const loadList = () => {
+    const categoryId = categoryIdParam();
+    if (lowStockOnly) {
+      dispatch(
+        getLowStockInventory({
+          threshold: LOW_STOCK_THRESHOLD,
+          page: currentPage,
+          limit: itemsPerPage,
+          ...(categoryId ? { categoryId } : {}),
+        }),
+      );
+    } else {
+      const params = { page: currentPage, limit: itemsPerPage };
+      if (searchTerm) params.search = searchTerm;
+      if (statusFilter !== "all") params.status = statusFilter;
+      if (categoryId) params.categoryId = categoryId;
+      dispatch(getInventoryList(params));
+    }
+    // Keep the "Low stock" chip's own count fresh regardless of which view
+    // is active, so it never shows a stale number.
+    if (!lowStockOnly) {
+      dispatch(
+        getLowStockInventory({
+          threshold: LOW_STOCK_THRESHOLD,
+          page: 1,
+          limit: 1,
+          ...(categoryId ? { categoryId } : {}),
+        }),
+      );
+    }
   };
 
-  const handleFormCancel = () => {
-    setActiveTab("table");
+  useEffect(() => {
+    loadList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch, searchTerm, selectedCategoryIds, statusFilter, lowStockOnly, currentPage, itemsPerPage]);
+
+  const activeList = lowStockOnly ? lowStock : { items, meta, loading, error };
+  const rows = activeList.items || [];
+
+  const toggleSelect = (id, checked) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-10 text-gray-500">
-        <svg
-          className="animate-spin h-5 w-5 text-purple-500 mr-2"
-          viewBox="0 0 24 24"
-        >
-          <circle
-            className="opacity-25"
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            strokeWidth="4"
-          />
-          <path
-            className="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8v8H4z"
-          />
-        </svg>
-        Loading Variants...
-      </div>
-    );
-  }
+  const toggleSelectAll = (checked) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      rows.forEach((r) => (checked ? next.add(r.id) : next.delete(r.id)));
+      return next;
+    });
+  };
+
+  const handleRefreshAfterMutation = () => {
+    loadList();
+  };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      {/* HEADER */}
       <div>
-        <h2 className="text-2xl font-bold text-gray-800 mb-6">{title}</h2>
+        <h2 className="!text-[26px] !font-bold !leading-[1.2] !m-0 text-[var(--mk-ink-900)] tracking-[-0.01em]">
+          {title}
+        </h2>
+        <p className="text-[12px] font-medium text-[var(--mk-ink-500)] mt-1 leading-[1.5]">
+          Stock levels across every variant — search, adjust, reserve/release, and bulk-update from here.
+        </p>
+      </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-gray-200 mb-6">
-          <button
-            style={{ cursor: "pointer" }}
-            className={`px-4 py-2 font-medium text-sm rounded-t-lg mr-2 ${
-              activeTab === "table"
-                ? "bg-white border border-gray-200 border-b-white text-blue-600"
-                : "bg-gray-50 border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-            }`}
-            onClick={() => setActiveTab("table")}
-          >
-            Variant List
-          </button>
-          <button
-            style={{ cursor: "pointer" }}
-            className={`px-4 py-2 font-medium text-sm rounded-t-lg ${
-              activeTab === "form"
-                ? "bg-white border border-gray-200 border-b-white text-blue-600"
-                : "bg-gray-50 border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-            }`}
-            onClick={handleAddNewClick}
-          >
-            {formData.id ? "Edit Variant" : "Add Variant"}
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-          {activeTab === "table" ? (
-            <div>
-              <div className="p-4 border-b border-gray-100 flex justify-between items-center">
-                <button
-                  style={{ cursor: "pointer" }}
-                  className="px-4 py-2 bg-black text-white rounded-lg text-sm font-medium hover:bg-gray-800"
-                  onClick={handleAddNewClick}
-                >
-                  Add New Variant
-                </button>
-              </div>
-              <VariantTable
-                data={variants}
-                title={title}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-              />
-            </div>
-          ) : (
-            <div className="p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">
-                {formData.id ? "Edit Variant" : "Add New Variant"}
-              </h3>
-              <VariantForm
-                defaultValues={formData}
-                onSubmit={handleFormSubmit}
-                onCancel={handleFormCancel}
-              />
-            </div>
-          )}
+      {/* INFO BANNER */}
+      <div className="flex items-start gap-2 px-[12px] py-[10px] rounded-[10px] bg-[var(--mk-info-bg)] border border-[#C9DBFA] text-[#1D4ED8] text-[12px] leading-[1.4]">
+        <Info size={13} className="mt-0.5 shrink-0" />
+        <div>
+          <b>New variants are still created inside a product.</b> Open a row here to update stock, adjust
+          quantities, or reserve/release units — or select rows and use Bulk update stock.
         </div>
       </div>
+
+      {/* TABLE */}
+      <div className="bg-white rounded-xl border border-[var(--mk-line)] overflow-hidden">
+        <VariantTable
+          data={rows}
+          title={title}
+          loading={activeList.loading}
+          error={activeList.error}
+          onRetry={loadList}
+          onView={(item) => setViewingVariantId(item.id)}
+          searchTerm={searchInput}
+          onSearchChange={setSearchInput}
+          categories={categories}
+          selectedCategoryIds={selectedCategoryIds}
+          onCategoryChange={setSelectedCategoryIds}
+          statusFilter={statusFilter}
+          onStatusFilterChange={setStatusFilter}
+          lowStockOnly={lowStockOnly}
+          onToggleLowStock={setLowStockOnly}
+          lowStockCount={lowStock?.meta?.total ?? 0}
+          lowStockLoading={lowStock?.loading}
+          lowStockError={lowStock?.error}
+          currentPage={currentPage}
+          itemsPerPage={itemsPerPage}
+          totalItems={activeList.meta?.total ?? 0}
+          onPageChange={setCurrentPage}
+          onItemsPerPageChange={(value) => {
+            setItemsPerPage(value);
+            setCurrentPage(1);
+          }}
+          selectedIds={selectedIds}
+          onToggleSelect={toggleSelect}
+          onToggleSelectAll={toggleSelectAll}
+          onOpenBulkUpdate={() => setShowBulkUpdate(true)}
+        />
+      </div>
+
+      {/* STOCK DETAILS DRAWER — real detail + write actions */}
+      <InventoryDetailDrawer
+        variantId={viewingVariantId}
+        open={!!viewingVariantId}
+        onClose={() => {
+          setViewingVariantId(null);
+          dispatch(clearSelectedInventory());
+        }}
+        onViewProduct={(productId) => {
+          setViewingVariantId(null);
+          dispatch(clearSelectedInventory());
+          setViewingProductId(productId);
+        }}
+        onMutated={handleRefreshAfterMutation}
+      />
+
+      {/* PRODUCT DETAIL DRAWER (cross-navigation target — variants are managed here) */}
+      <ProductDetailDrawer
+        productId={viewingProductId}
+        open={!!viewingProductId}
+        onClose={() => setViewingProductId(null)}
+        onSaved={handleRefreshAfterMutation}
+        onDeleted={handleRefreshAfterMutation}
+      />
+
+      {/* BULK STOCK UPDATE */}
+      <BulkStockUpdateModal
+        open={showBulkUpdate}
+        onClose={() => setShowBulkUpdate(false)}
+        rows={rows.filter((r) => selectedIds.has(r.id))}
+        onDone={() => {
+          setShowBulkUpdate(false);
+          setSelectedIds(new Set());
+          toast.success("Stock updated");
+          handleRefreshAfterMutation();
+        }}
+      />
     </div>
   );
 };

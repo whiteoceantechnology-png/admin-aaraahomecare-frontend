@@ -1,75 +1,146 @@
-// src/components/order/OrderTable.jsx
-import { useState, useRef, useEffect } from "react";
+// src/components/table/OrderTable.jsx
+// mk design system, matching the reference screenshot. Next Action replaces
+// the old Eye/Track/Cancel icon column — every state (pill, action label,
+// conflict indicator) is derived from real order fields (status,
+// paymentStatus, totalAmount) via getOrderNextAction, never invented.
+import { useState, useEffect, useMemo } from "react";
+import { Eye, Pencil, Printer, PackageCheck, Ban, Undo2, Phone, History, CreditCard } from "lucide-react";
+import CommonTable from "../common/CommonTable";
+import Pagination from "../common/Pagination";
+import OrderStatusPill from "../common/OrderStatusPill";
+import OrderStatusDropdown from "../common/OrderStatusDropdown";
+import OrderActionDropdown from "../common/OrderActionDropdown";
+import OrderActionMenu from "../common/OrderActionMenu";
+import OrderDateFilter from "../common/OrderDateFilter";
+import { formatDate } from "../../utils/formatDate";
+import { getOrderNextAction, isConflictAction } from "../../utils/orderNextAction";
+import { isPlacedStatus } from "../../utils/orderStatusStages";
 import {
-  Search,
-  Download,
-  Printer,
-  EyeOff,
-  ChevronDown,
-  ArrowUp,
-  ArrowDown,
-  Eye,
-  MapPin,
-  XCircle,
-} from "lucide-react";
+  FILTER_SEARCH_WRAP_CLASS,
+  FILTER_SEARCH_ICON_WRAP_CLASS,
+  FILTER_SEARCH_INPUT_CLASS,
+  FILTER_SELECT_CLASS as selectClass,
+} from "../common/filterToolbarStyles";
+
+const hasValue = (v) => v !== null && v !== undefined;
+
+const PAID_FAMILY = ["paid", "completed", "success"];
+
+const titleCase = (s) =>
+  (s || "")
+    .toString()
+    .toLowerCase()
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+
+const fmtMoney = (n) =>
+  `₹${Number(n ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+// These are grouping/tab names only — never rendered as a Current Status
+// value. "New Orders" and "Processing Orders" deliberately overlap by
+// design: New = just-placed orders only; Processing = the whole active
+// range "from Order Placed until Delivered" (Order Placed + Packed +
+// Shipped), so a just-placed order legitimately appears in both. Completed
+// = Delivered only. Cancelled orders intentionally match no tab — whether
+// they belong under Completed (or need their own bucket) is a business
+// decision that hasn't been confirmed, so they're deliberately left
+// unbucketed rather than silently folded into Completed; they're still
+// fully reachable via the Current Status filter and search.
+const ORDER_TABS = [
+  { key: "new", label: "New Orders", match: (status) => isPlacedStatus(status) },
+  {
+    key: "processing",
+    label: "Processing Orders",
+    match: (status) => isPlacedStatus(status) || status === "packed" || status === "shipped",
+  },
+  { key: "completed", label: "Completed Orders", match: (status) => status === "delivered" },
+];
 
 const OrderTable = ({
   data = [],
   title = "Orders",
   onView,
+  onProgressStatus,
   onTrack,
   onCancel,
+  onRecordCod,
+  onMarkPaid,
+  recordingCodId = null,
+  initialSearch = "",
 }) => {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [visibleColumns, setVisibleColumns] = useState({
-    id: true,
-    orderId: true,
-    orderType: true,
-    totalAmount: true,
-    paymentStatus: true,
-    orderStatus: true,
-    date: true,
-  });
-  const [showColumnToggle, setShowColumnToggle] = useState(false);
-  const [sortField, setSortField] = useState("orderId");
-  const [sortDirection, setSortDirection] = useState("asc");
+  // Seeds the existing search box (never changes its own logic) — used when
+  // arriving here from "View orders" on the Customers page with ?customer=
+  // in the URL. Empty by default, so every other caller is unaffected. Tab
+  // default is untouched (still "new") — deliberately not widened, since
+  // that's separate, pre-existing tab behavior this task shouldn't change.
+  const [activeTab, setActiveTab] = useState("new");
+  const [searchTerm, setSearchTerm] = useState(initialSearch);
+  const [paymentFilter, setPaymentFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [dateStart, setDateStart] = useState(null);
+  const [dateEnd, setDateEnd] = useState(null);
+  const [sortField, setSortField] = useState("createdAt");
+  const [sortDirection, setSortDirection] = useState("desc");
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
-  const tableRef = useRef(null);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
-  // search
+  const paymentOptions = [...new Set(data.map((o) => o?.paymentStatus).filter(Boolean))];
+  const statusOptions = [...new Set(data.map((o) => o?.status).filter(Boolean))];
+
+  // Tabs overlap by design (see ORDER_TABS above), so an order can count
+  // toward more than one tab — this loop checks every tab per order rather
+  // than assigning each order to a single bucket.
+  const tabCounts = useMemo(() => {
+    const counts = { new: 0, processing: 0, completed: 0 };
+    data.forEach((o) => {
+      const s = (o?.status || "").toLowerCase();
+      ORDER_TABS.forEach((tab) => {
+        if (tab.match(s)) counts[tab.key] += 1;
+      });
+    });
+    return counts;
+  }, [data]);
+
+  const handleDateChange = (start, end) => {
+    setDateStart(start);
+    setDateEnd(end);
+  };
+
   const filteredData = data.filter((item) => {
+    const status = (item?.status || "").toLowerCase();
+    const tabDef = ORDER_TABS.find((t) => t.key === activeTab);
+    if (tabDef && !tabDef.match(status)) return false;
+    if (paymentFilter !== "all" && item?.paymentStatus !== paymentFilter) return false;
+    if (statusFilter !== "all" && item?.status !== statusFilter) return false;
+    if (dateStart) {
+      const created = item?.createdAt ? new Date(item.createdAt) : null;
+      if (!created) return false;
+      const dayStart = new Date(dateStart);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(dateEnd || dateStart);
+      dayEnd.setHours(23, 59, 59, 999);
+      if (created < dayStart || created > dayEnd) return false;
+    }
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
-    return ["orderId", "paymentStatus", "orderStatus"].some((key) =>
-      item[key]?.toString().toLowerCase().includes(term)
+    return [item?.orderNumber, item?.customer?.name].some((v) =>
+      v?.toString().toLowerCase().includes(term),
     );
   });
 
-  // sort
   const sortedData = [...filteredData].sort((a, b) => {
-    const av =
-      sortField === "date"
-        ? a.txnTimeStamp ?? a.createdAt ?? ""
-        : a[sortField] ?? "";
-    const bv =
-      sortField === "date"
-        ? b.txnTimeStamp ?? b.createdAt ?? ""
-        : b[sortField] ?? "";
+    const av = a[sortField] ?? "";
+    const bv = b[sortField] ?? "";
     if (av < bv) return sortDirection === "asc" ? -1 : 1;
     if (av > bv) return sortDirection === "asc" ? 1 : -1;
     return 0;
   });
 
-  // pagination
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = sortedData.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(sortedData.length / itemsPerPage) || 1;
-
-  const toggleColumn = (column) => {
-    setVisibleColumns((prev) => ({ ...prev, [column]: !prev[column] }));
-  };
 
   const handleSort = (field) => {
     if (sortField === field) {
@@ -80,425 +151,251 @@ const OrderTable = ({
     }
   };
 
-  const getSortIcon = (field) => {
-    if (sortField !== field) return null;
-    return sortDirection === "asc" ? (
-      <ArrowUp size={14} className="ml-1" />
-    ) : (
-      <ArrowDown size={14} className="ml-1" />
-    );
-  };
-
-  // CSV export
-  const handleDownloadCSV = () => {
-    const cols = Object.keys(visibleColumns).filter((c) => visibleColumns[c]);
-    const headers = cols
-      .map((c) => {
-        if (c === "id") return "SNo";
-        if (c === "orderId") return "Order ID";
-        if (c === "orderType") return "Order Type";
-        if (c === "totalAmount") return "Total Amount";
-        if (c === "paymentStatus") return "Payment Status";
-        if (c === "orderStatus") return "Order Status";
-        if (c === "date") return "Date";
-        return c;
-      })
-      .join(",");
-    let csv = headers + "\r\n";
-
-    sortedData.forEach((item, idx) => {
-      const row = cols
-        .map((key) => {
-          if (key === "id") return `"${idx + 1}"`;
-          if (key === "date") {
-            return `"${(
-              item.txnTimeStamp ?? item.createdAt ?? ""
-            )
-              .toString()
-              .replace(/"/g, '""')}"`;
-          }
-          return `"${(item[key] ?? "").toString().replace(/"/g, '""')}"`;
-        })
-        .join(",");
-      csv += row + "\r\n";
-    });
-
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${title.toLowerCase()}_data.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  };
-
-  // Print
-  const handlePrint = () => {
-    const cols = Object.keys(visibleColumns).filter((c) => visibleColumns[c]);
-    let html = "<html><head><title>Print</title>";
-    html +=
-      "<style>table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f2f2f2}</style></head><body>";
-    html += `<h2>${title}</h2><table><thead><tr>`;
-    cols.forEach((c) => {
-      let label = c;
-      if (c === "id") label = "SNo";
-      if (c === "orderId") label = "Order ID";
-      if (c === "orderType") label = "Order Type";
-      if (c === "totalAmount") label = "Total Amount";
-      if (c === "paymentStatus") label = "Payment Status";
-      if (c === "orderStatus") label = "Order Status";
-      if (c === "date") label = "Date";
-      html += `<th>${label}</th>`;
-    });
-    html += "</tr></thead><tbody>";
-
-    sortedData.forEach((item, idx) => {
-      html += "<tr>";
-      cols.forEach((c) => {
-        let value = "";
-        if (c === "id") value = idx + 1;
-        else if (c === "date") value = item.txnTimeStamp ?? item.createdAt ?? "";
-        else value = item[c] ?? "";
-        html += `<td>${value}</td>`;
-      });
-      html += "</tr>";
-    });
-    html += "</tbody></table></body></html>";
-
-    const frame = document.createElement("iframe");
-    frame.style.position = "absolute";
-    frame.style.top = "-999px";
-    document.body.appendChild(frame);
-    frame.contentDocument.write(html);
-    frame.contentDocument.close();
-    setTimeout(() => {
-      frame.contentWindow.print();
-      document.body.removeChild(frame);
-    }, 300);
-  };
-
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm]);
+  }, [searchTerm, paymentFilter, statusFilter, activeTab, dateStart, dateEnd]);
 
-  useEffect(() => {
-    const handler = (e) => {
-      if (
-        showColumnToggle &&
-        !e.target.closest(".column-toggle-container") &&
-        !e.target.closest(".column-toggle-button")
-      ) {
-        setShowColumnToggle(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showColumnToggle]);
+  // Row-level "⋮" menu. Actions that need full order-detail context (invoice/
+  // packing-slip content, contact info, refund amount, activity timeline)
+  // open the drawer via onView instead of faking that context from a
+  // collapsed row — the drawer's own menu then performs the real action.
+  // Edit/Cancel/Mark Paid already have everything they need from the row, so
+  // they fire directly.
+  const buildRowMenuItems = (item) => {
+    const cancelled = (item?.status || "").toLowerCase() === "cancelled";
+    const isPaid = PAID_FAMILY.includes((item?.paymentStatus || "").toLowerCase());
+    return [
+      { key: "view", label: "View Order", icon: Eye, onClick: () => onView?.(item) },
+      { key: "edit", label: "Edit Order", icon: Pencil, onClick: () => onTrack?.(item) },
+      { key: "invoice", label: "Print Invoice", icon: Printer, onClick: () => onView?.(item) },
+      { key: "packing", label: "Print Packing Slip", icon: PackageCheck, onClick: () => onView?.(item) },
+      {
+        key: "markPaid",
+        label: "Mark Payment as Paid",
+        icon: CreditCard,
+        disabled: isPaid,
+        onClick: () => onMarkPaid?.(item),
+      },
+      {
+        key: "cancel",
+        label: "Cancel Order",
+        icon: Ban,
+        tone: "danger",
+        disabled: cancelled,
+        onClick: () => onCancel?.(item),
+      },
+      { key: "refund", label: "Refund", icon: Undo2, onClick: () => onView?.(item) },
+      { key: "contact", label: "Contact Customer", icon: Phone, onClick: () => onView?.(item) },
+      { key: "activity", label: "View Activity", icon: History, onClick: () => onView?.(item) },
+    ];
+  };
+
+  const handleNextAction = (item, action) => {
+    if (action.type === "progress") {
+      onProgressStatus?.(item, action.targetStatus);
+    } else if (action.type === "cod_payment") {
+      onRecordCod?.(item);
+    } else if (action.type === "mark_paid") {
+      onMarkPaid?.(item);
+    } else {
+      onView?.(item);
+    }
+  };
+
+  const columns = [
+    {
+      key: "orderNumber",
+      header: "Order",
+      sortable: true,
+      width: "230px",
+      render: (item) => {
+        const paymentType = item?.payments?.[0]?.method || item?.paymentMethod;
+        return (
+          <div className="min-w-0">
+            <p className="font-semibold text-[12px] leading-4 !mb-0 text-[var(--mk-ink-900)] truncate max-w-[200px]" title={item?.orderNumber}>
+              {item?.orderNumber}
+            </p>
+            {paymentType && (
+              <p className="text-[11px] font-normal leading-[14px] text-[var(--mk-ink-400)] !mt-0.5 !mb-0 truncate max-w-[200px]">
+                {titleCase(paymentType)}
+              </p>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: "customer",
+      header: "Customer",
+      width: "150px",
+      truncate: true,
+      truncateWidth: "140px",
+      className: "text-[13px] leading-[18px] text-[var(--mk-ink-700)]",
+      render: (item) => item?.customer?.name || "—",
+    },
+    {
+      key: "itemCount",
+      header: "Items",
+      width: "80px",
+      className: "text-[12px] text-[var(--mk-ink-500)]",
+      render: (item) => {
+        const n = Array.isArray(item?.items) ? item.items.length : null;
+        return hasValue(n) ? `${n} item${n === 1 ? "" : "s"}` : "—";
+      },
+    },
+    {
+      key: "totalAmount",
+      header: "Amount",
+      width: "95px",
+      className: "text-[13px] leading-[18px] text-[var(--mk-ink-900)] font-medium tabular-nums",
+      render: (item) => fmtMoney(item?.totalAmount),
+    },
+    {
+      key: "paymentStatus",
+      header: "Payment",
+      width: "150px",
+      render: (item) => <OrderStatusPill status={item?.paymentStatus} />,
+    },
+    {
+      key: "status",
+      header: "Current Status",
+      sortable: true,
+      width: "160px",
+      render: (item) => (
+        <OrderStatusDropdown order={item} onChange={(newStatus) => onProgressStatus?.(item, newStatus)} />
+      ),
+    },
+    {
+      key: "createdAt",
+      header: "Date",
+      sortable: true,
+      width: "140px",
+      className: "text-[12px] font-normal leading-[18px] text-[var(--mk-ink-500)]",
+      render: (item) => formatDate(item?.createdAt),
+    },
+    {
+      key: "nextAction",
+      header: "Next Action",
+      width: "155px",
+      align: "right",
+      render: (item) => (
+        <OrderActionDropdown
+          action={getOrderNextAction(item)}
+          onSelect={(action) => handleNextAction(item, action)}
+          loading={recordingCodId === item.id}
+        />
+      ),
+    },
+  ];
 
   return (
     <div>
-      {/* Top bar */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center p-4 border-b border-gray-200">
-        <div className="relative w-full md:w-64 mb-4 md:mb-0">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search size={16} className="text-gray-400" />
+      {/* ORDER TABS — plain text underline tabs, not a segmented control */}
+      <div className="px-[14px] pt-[14px] border-b border-[var(--mk-line)]">
+        <div className="flex items-center gap-5">
+          {ORDER_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              className={`inline-flex items-center gap-1.5 pb-[10px] border-b-2 text-[13px] transition-colors cursor-pointer whitespace-nowrap ${
+                activeTab === tab.key
+                  ? "border-[var(--mk-primary)] text-[var(--mk-ink-900)] font-semibold"
+                  : "border-transparent text-[var(--mk-ink-500)] font-medium hover:text-[var(--mk-ink-700)]"
+              }`}
+            >
+              {tab.label}
+              <span
+                className={`text-[11.5px] font-semibold leading-none ${
+                  activeTab === tab.key ? "text-[var(--mk-primary)]" : "text-[var(--mk-ink-400)]"
+                }`}
+              >
+                {tabCounts[tab.key]}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2.5 mt-[14px] px-[14px] pb-[14px] overflow-x-auto border-b border-[var(--mk-line)]">
+        <div className={FILTER_SEARCH_WRAP_CLASS}>
+          <div className={FILTER_SEARCH_ICON_WRAP_CLASS}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[var(--mk-ink-400)]">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
           </div>
           <input
             type="text"
-            placeholder="Search by order id / status..."
+            placeholder="Search by order ID or customer"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+            className={FILTER_SEARCH_INPUT_CLASS}
           />
         </div>
 
-        <div className="flex space-x-2">
-          <button
-            style={{ cursor: "pointer" }}
-            onClick={handleDownloadCSV}
-            className="flex items-center px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
-          >
-            <Download size={16} className="mr-1" />
-            <span className="text-sm">Export</span>
-          </button>
+        <select
+          value={paymentFilter}
+          onChange={(e) => setPaymentFilter(e.target.value)}
+          className={`${selectClass} w-[160px] shrink-0`}
+          aria-label="Filter by payment status"
+        >
+          <option value="all">All payment states</option>
+          {paymentOptions.map((p) => (
+            <option key={p} value={p}>
+              {p.replace(/_/g, " ")}
+            </option>
+          ))}
+        </select>
 
-          <button
-            style={{ cursor: "pointer" }}
-            onClick={handlePrint}
-            className="flex items-center px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
-          >
-            <Printer size={16} className="mr-1" />
-            <span className="text-sm">Print</span>
-          </button>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className={`${selectClass} w-[170px] shrink-0`}
+          aria-label="Filter by current status"
+        >
+          <option value="all">All current statuses</option>
+          {statusOptions.map((s) => (
+            <option key={s} value={s}>
+              {s.replace(/_/g, " ")}
+            </option>
+          ))}
+        </select>
 
-          <div className="relative column-toggle-container">
-            <button
-              style={{ cursor: "pointer" }}
-              onClick={() => setShowColumnToggle((p) => !p)}
-              className="column-toggle-button flex items-center px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
-            >
-              <EyeOff size={16} className="mr-1" />
-              <span className="text-sm">Columns</span>
-              <ChevronDown size={16} className="ml-1" />
-            </button>
-
-            {showColumnToggle && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-10 border border-gray-200">
-                <div className="p-2">
-                  <h4 className="text-sm font-medium text-gray-700 mb-2">
-                    Toggle Columns
-                  </h4>
-                  <div className="space-y-1">
-                    {Object.keys(visibleColumns).map((column) => (
-                      <label
-                        key={column}
-                        className="flex items-center text-sm capitalize"
-                      >
-                        <input
-                          style={{ cursor: "pointer" }}
-                          type="checkbox"
-                          checked={visibleColumns[column]}
-                          onChange={() => toggleColumn(column)}
-                          className="mr-2"
-                        />
-                        {column === "id"
-                          ? "SNo"
-                          : column === "orderId"
-                          ? "Order ID"
-                          : column === "orderType"
-                          ? "Order Type"
-                          : column === "totalAmount"
-                          ? "Total Amount"
-                          : column === "paymentStatus"
-                          ? "Payment Status"
-                          : column === "orderStatus"
-                          ? "Order Status"
-                          : column === "date"
-                          ? "Date"
-                          : column}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        <OrderDateFilter startDate={dateStart} endDate={dateEnd} onChange={handleDateChange} />
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full" ref={tableRef}>
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {visibleColumns.id && (
-                <th
-                  onClick={() => handleSort("id")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                >
-                  SNo {getSortIcon("id")}
-                </th>
-              )}
-              {visibleColumns.orderId && (
-                <th
-                  onClick={() => handleSort("orderId")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                >
-                  Order ID {getSortIcon("orderId")}
-                </th>
-              )}
-              {visibleColumns.orderType && (
-                <th
-                  onClick={() => handleSort("orderType")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                >
-                  Order Type {getSortIcon("orderType")}
-                </th>
-              )}
-              {visibleColumns.totalAmount && (
-                <th
-                  onClick={() => handleSort("totalAmount")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                >
-                  Total Amount {getSortIcon("totalAmount")}
-                </th>
-              )}
-              {visibleColumns.paymentStatus && (
-                <th
-                  onClick={() => handleSort("paymentStatus")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                >
-                  Payment Status {getSortIcon("paymentStatus")}
-                </th>
-              )}
-              {visibleColumns.orderStatus && (
-                <th
-                  onClick={() => handleSort("orderStatus")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                >
-                  Order Status {getSortIcon("orderStatus")}
-                </th>
-              )}
-              {visibleColumns.date && (
-                <th
-                  onClick={() => handleSort("date")}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                >
-                  Date {getSortIcon("date")}
-                </th>
-              )}
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
-            </tr>
-          </thead>
+      <CommonTable
+        columns={columns}
+        data={currentItems}
+        sortField={sortField}
+        sortDirection={sortDirection}
+        onSort={handleSort}
+        emptyMessage={`No ${title.toLowerCase()} found`}
+        minWidth="1210px"
+        actionsWidth="56px"
+        headerBgClass="bg-[#FAFBFD]"
+        headerTextClass="text-[10px] font-semibold text-[var(--mk-ink-400)] tracking-[0.5px] leading-[14px]"
+        headerHeightClass="h-[38px]"
+        rowPaddingY="py-[8px]"
+        rowMinH="min-h-9"
+        onRowClick={onView}
+        rowClassName={(item) =>
+          isConflictAction(getOrderNextAction(item)) ? "border-l-[3px] border-l-[var(--mk-dgr)]" : ""
+        }
+        renderRowActions={(item) => <OrderActionMenu items={buildRowMenuItems(item)} />}
+      />
 
-          <tbody className="bg-white divide-y divide-gray-200">
-            {currentItems.length > 0 ? (
-              currentItems.map((item, index) => (
-                <tr key={item.id}>
-                  {visibleColumns.id && (
-                    <td className="px-6 py-4 capitalize">
-                      {indexOfFirstItem + index + 1}
-                    </td>
-                  )}
-
-                  {visibleColumns.orderId && (
-                    <td className="px-6 py-4">{item.orderId}</td>
-                  )}
-
-                  {visibleColumns.orderType && (
-                    <td className="px-6 py-4">
-                      <span
-                        className={`px-3 inline-flex text-xs leading-5 font-semibold rounded capitalize text-white ${
-                          item.orderType === "normal"
-                            ? "bg-gray-600"
-                            : "bg-green-600"
-                        }`}
-                      >
-                        {item.orderType}
-                      </span>
-                    </td>
-                  )}
-
-                  {visibleColumns.totalAmount && (
-                    <td className="px-6 py-4">₹{item.totalAmount}</td>
-                  )}
-
-                  {visibleColumns.paymentStatus && (
-                    <td className="px-6 py-4 capitalize">
-                      {item.paymentStatus}
-                    </td>
-                  )}
-
-                  {visibleColumns.orderStatus && (
-                    <td className="px-6 py-4 capitalize">
-                      {item.orderStatus}
-                    </td>
-                  )}
-
-                  {visibleColumns.date && (
-                    <td className="px-6 py-4 text-xs text-gray-500">
-                      {item.txnTimeStamp ?? item.createdAt}
-                    </td>
-                  )}
-
-                  <td className="px-6 py-4 text-right space-x-2">
-                    {/* View */}
-                    <button
-                      type="button"
-                      style={{ cursor: "pointer" }}
-                      className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200"
-                      title="View Order Details"
-                      onClick={() => onView && onView(item)}
-                    >
-                      <Eye size={16} />
-                    </button>
-
-                    {/* Track */}
-                    <button
-                      type="button"
-                      style={{ cursor: "pointer" }}
-                      className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100"
-                      title="Track Order"
-                      onClick={() => onTrack && onTrack(item)}
-                    >
-                      <MapPin size={16} />
-                    </button>
-
-                    {/* Cancel */}
-                    <button
-                      type="button"
-                      style={{ cursor: "pointer" }}
-                      className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-50 text-red-600 hover:bg-red-100"
-                      title="Cancel Order"
-                      onClick={() => onCancel && onCancel(item)}
-                    >
-                      <XCircle size={16} />
-                    </button>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td
-                  colSpan="8"
-                  className="px-6 py-4 text-center text-sm text-gray-500"
-                >
-                  No {title.toLowerCase()} found
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Pagination */}
-      <div className="border-t border-gray-200 px-4 py-3 flex items-center justify-between">
-        <p className="text-sm text-gray-700">
-          Showing{" "}
-          <span className="font-medium">
-            {currentItems.length > 0 ? indexOfFirstItem + 1 : 0}
-          </span>{" "}
-          to{" "}
-          <span className="font-medium">
-            {Math.min(indexOfLastItem, sortedData.length)}
-          </span>{" "}
-          of <span className="font-medium">{sortedData.length}</span> results
-        </p>
-        <div className="flex">
-          <button
-            onClick={() =>
-              setCurrentPage((prev) => Math.max(prev - 1, 1))
-            }
-            disabled={currentPage === 1}
-            className={`px-3 py-1 text-sm rounded-l-md ${
-              currentPage === 1
-                ? "text-gray-300 cursor-not-allowed"
-                : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            Prev
-          </button>
-          <span className="px-4 py-1 text-sm text-gray-700">
-            {currentPage} / {totalPages}
-          </span>
-          <button
-            onClick={() =>
-              setCurrentPage((prev) => Math.min(prev + 1, totalPages))
-            }
-            disabled={currentPage === totalPages}
-            className={`px-3 py-1 text-sm rounded-r-md ${
-              currentPage === totalPages
-                ? "text-gray-300 cursor-not-allowed"
-                : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            Next
-          </button>
-        </div>
-      </div>
+      <Pagination
+        currentPage={currentPage}
+        totalItems={sortedData.length}
+        itemsPerPage={itemsPerPage}
+        onPageChange={setCurrentPage}
+        onItemsPerPageChange={(value) => {
+          setItemsPerPage(value);
+          setCurrentPage(1);
+        }}
+      />
     </div>
   );
 };
