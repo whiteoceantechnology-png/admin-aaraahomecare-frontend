@@ -1,10 +1,10 @@
 // "Add the standard ladder" editor — every standard size for the product is
 // always shown as its own editable row, no click-to-edit step. A step that
 // already exists as a real, persisted variant is pre-filled straight from
-// that variant's stored price/offer/stock (SKU shown, not editable);
-// everything else is a blank row for adding a brand-new size. Saving sends
-// changed existing rows through onUpdateBatch (updates that variant's id —
-// never a duplicate) and touched new rows through onAddBatch, in one action.
+// that variant's stored price/offer (SKU shown, not editable); everything
+// else is a blank row for adding a brand-new size. Saving sends changed
+// existing rows through onUpdateBatch (updates that variant's id — never a
+// duplicate) and touched new rows through onAddBatch, in one action.
 // A GST inclusive/ex-GST toggle converts typed catalogue prices to the
 // ex-GST value that's actually stored, and a collapsible custom-size
 // section covers anything outside the standard ladder.
@@ -75,7 +75,8 @@ const VariantLadderEditor = ({
   onAddBatch,
   onUpdateBatch,
 }) => {
-  const hasRealVariants = Array.isArray(existingVariants) && existingVariants.length > 0;
+  const hasRealVariants =
+    Array.isArray(existingVariants) && existingVariants.length > 0;
   // What the product's own data (real variants, else category) suggests —
   // used only to pick the KG/ML/UNIT toggle's default. All three options
   // are always offered for every product/category — see the toggle below.
@@ -92,7 +93,10 @@ const VariantLadderEditor = ({
   // 25 g/50 g/… rows never matched any ladder step and the ladder rendered
   // a blank, unrelated 1/5/10 kg row set instead of pre-filling them. UNIT
   // → the piece/pack ladder, always.
-  const mlSystem = inferredSystem.key === "BULK_KG" || inferredSystem.key === "PACK" ? SIZE_SYSTEMS.VOLUME : inferredSystem;
+  const mlSystem =
+    inferredSystem.key === "BULK_KG" || inferredSystem.key === "PACK"
+      ? SIZE_SYSTEMS.VOLUME
+      : inferredSystem;
 
   // Default is set once real data (existing variants, or else a chosen
   // category) is available — see the ref-guarded effect below for why it
@@ -102,9 +106,15 @@ const VariantLadderEditor = ({
   const unitFamilyDefaultSetRef = useRef(false);
 
   const sizeSystem =
-    unitFamily === "kg" ? SIZE_SYSTEMS.BULK_KG : unitFamily === "unit" ? SIZE_SYSTEMS.PACK : mlSystem;
+    unitFamily === "kg"
+      ? SIZE_SYSTEMS.BULK_KG
+      : unitFamily === "unit"
+        ? SIZE_SYSTEMS.PACK
+        : mlSystem;
 
-  const effectiveExistingLabels = existingVariants ? existingVariants.map((v) => v.variantName) : existingLabels;
+  const effectiveExistingLabels = existingVariants
+    ? existingVariants.map((v) => v.variantName)
+    : existingLabels;
   const existing = effectiveExistingLabels.map(normalize);
 
   // A signature of the real variants' current values — re-seeding on this
@@ -112,7 +122,9 @@ const VariantLadderEditor = ({
   // value show up instead of the pre-save one, without wiping the admin's
   // in-progress edits to a DIFFERENT row on every keystroke.
   const variantsSignature = (existingVariants || [])
-    .map((v) => `${v.id}:${v.variantName}:${v.price}:${v.discountPrice}:${v.stockQuantity}:${v.sku}`)
+    .map(
+      (v) => `${v.id}:${v.variantName}:${v.price}:${v.discountPrice}:${v.sku}`,
+    )
     .join("|");
 
   // Pre-filled existing rows hold the STORED ex-GST value directly — typing
@@ -130,7 +142,6 @@ const VariantLadderEditor = ({
   const [cUnit, setCUnit] = useState(sizeSystem.units[0] || "g");
   const [cPrice, setCPrice] = useState("");
   const [cOffer, setCOffer] = useState("");
-  const [cStock, setCStock] = useState("");
   const [submittingCustom, setSubmittingCustom] = useState(false);
 
   useEffect(() => {
@@ -138,16 +149,23 @@ const VariantLadderEditor = ({
     sizeSystem.steps.forEach(([qty, unit]) => {
       const match = findExistingVariantForStep(existingVariants, qty, unit);
       if (!match) {
-        seed[stepKey(qty, unit)] = { price: "", offerPrice: "", stock: 0 };
+        seed[stepKey(qty, unit)] = { price: "", offerPrice: "" };
         return;
       }
-      const hasOffer = match.discountPrice != null && Number(match.discountPrice) !== Number(match.price);
+      const hasOffer =
+        match.discountPrice != null &&
+        Number(match.discountPrice) !== Number(match.price);
       const original = {
         price: match.price ?? "",
         offerPrice: hasOffer ? match.discountPrice : "",
-        stock: match.stockQuantity ?? 0,
       };
-      seed[stepKey(qty, unit)] = { ...original, variantId: match.id, sku: match.sku, variantObj: match, original };
+      seed[stepKey(qty, unit)] = {
+        ...original,
+        variantId: match.id,
+        sku: match.sku,
+        variantObj: match,
+        original,
+      };
     });
     setLadderInputs(seed);
     setCUnit(sizeSystem.units[0] || "g");
@@ -164,17 +182,24 @@ const VariantLadderEditor = ({
   // on the very first, data-less render) so a kg-family product doesn't
   // get permanently stuck defaulted to "ml" (or vice versa) before its
   // real category/variants have loaded. All three tabs are always shown;
-  // this only decides which one starts selected.
+  // this only decides which one starts selected. Never reads the current
+  // unitFamily/previous UI state — always recomputed from inferredSystem.
   useEffect(() => {
     if (unitFamilyDefaultSetRef.current) return;
     if (!hasRealVariants && !categoryName) return;
     unitFamilyDefaultSetRef.current = true;
-    // A genuine bulk-kg product (1/5/10 kg) defaults to KG, a piece/pack
-    // product defaults to UNIT — everything else (volume, gram-sized, or
-    // an unrecognized category) defaults to ML, since that's the side that
-    // resolves to whatever system actually matches the real data.
+    // Bug fix: this used to default anything that wasn't literally
+    // BULK_KG or PACK to "ml" — which caught gram-based systems (MASS_STD/
+    // MASS_PIGMENT, e.g. 100 g/250 g/500 g/1 kg variants) too, since they
+    // have their own distinct system key. A weight-family product (any
+    // system whose steps are measured in g/kg, bulk or gram-scale alike)
+    // must default to KG; only a genuine volume system (ml/L) should
+    // default to ML. Derived from the system's own `units` data — not a
+    // hardcoded per-product/category rule.
+    const isWeightFamily =
+      inferredSystem.units.includes("g") || inferredSystem.units.includes("kg");
     setUnitFamily(
-      inferredSystem.key === "BULK_KG" ? "kg" : inferredSystem.key === "PACK" ? "unit" : "ml",
+      isWeightFamily ? "kg" : inferredSystem.key === "PACK" ? "unit" : "ml",
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inferredSystem.key, hasRealVariants, categoryName]);
@@ -182,7 +207,12 @@ const VariantLadderEditor = ({
   const updateLadderInput = (qty, unit, patch) => {
     setLadderInputs((prev) => ({
       ...prev,
-      [stepKey(qty, unit)]: { price: "", offerPrice: "", stock: 0, ...prev[stepKey(qty, unit)], ...patch },
+      [stepKey(qty, unit)]: {
+        price: "",
+        offerPrice: "",
+        ...prev[stepKey(qty, unit)],
+        ...patch,
+      },
     }));
   };
 
@@ -195,12 +225,21 @@ const VariantLadderEditor = ({
 
   const rows = sizeSystem.steps.map(([qty, unit]) => {
     const key = stepKey(qty, unit);
-    const input = ladderInputs[key] || { price: "", offerPrice: "", stock: 0 };
+    const input = ladderInputs[key] || { price: "", offerPrice: "" };
     const isExisting = !!input.variantId;
     // Existing rows are always "touched" — they already carry a real,
     // stored price the moment they're seeded.
     const touched = isExisting || input.price !== "" || input.offerPrice !== "";
-    if (!touched) return { qty, unit, key, input, isExisting, touched: false, valid: false };
+    if (!touched)
+      return {
+        qty,
+        unit,
+        key,
+        input,
+        isExisting,
+        touched: false,
+        valid: false,
+      };
 
     const priceError = validatePrice(input.price);
     const offerError = validateOfferPrice(input.offerPrice, input.price);
@@ -208,17 +247,33 @@ const VariantLadderEditor = ({
     const dirty =
       isExisting &&
       (!numEq(input.price, input.original.price) ||
-        !numEq(input.offerPrice, input.original.offerPrice) ||
-        !numEq(input.stock, input.original.stock));
+        !numEq(input.offerPrice, input.original.offerPrice));
 
-    return { qty, unit, key, input, isExisting, touched: true, valid, priceError, offerError, dirty };
+    return {
+      qty,
+      unit,
+      key,
+      input,
+      isExisting,
+      touched: true,
+      valid,
+      priceError,
+      offerError,
+      dirty,
+    };
   });
 
   const readyToAdd = rows.filter((r) => r.touched && r.valid && !r.isExisting);
-  const readyToUpdate = rows.filter((r) => r.touched && r.valid && r.isExisting && r.dirty);
+  const readyToUpdate = rows.filter(
+    (r) => r.touched && r.valid && r.isExisting && r.dirty,
+  );
 
   const handleSaveLadder = async () => {
-    if ((readyToAdd.length === 0 && readyToUpdate.length === 0) || submittingLadder) return;
+    if (
+      (readyToAdd.length === 0 && readyToUpdate.length === 0) ||
+      submittingLadder
+    )
+      return;
     setSubmittingLadder(true);
 
     let ok = true;
@@ -228,8 +283,10 @@ const VariantLadderEditor = ({
         unit,
         label: formatSizeLabel(qty, unit),
         price: toExGst(input.price, taxPercent, gstInclusive),
-        offerPrice: input.offerPrice === "" ? "" : toExGst(input.offerPrice, taxPercent, gstInclusive),
-        stock: Number(input.stock) > 0 ? Number(input.stock) : 0,
+        offerPrice:
+          input.offerPrice === ""
+            ? ""
+            : toExGst(input.offerPrice, taxPercent, gstInclusive),
         sku: generateVariantSku(productName, qty, unit),
       }));
       const addOk = await onAddBatch(additions);
@@ -240,8 +297,10 @@ const VariantLadderEditor = ({
         id: input.variantId,
         label: formatSizeLabel(qty, unit),
         price: toExGst(input.price, taxPercent, gstInclusive),
-        offerPrice: input.offerPrice === "" ? "" : toExGst(input.offerPrice, taxPercent, gstInclusive),
-        stock: Number(input.stock) > 0 ? Number(input.stock) : 0,
+        offerPrice:
+          input.offerPrice === ""
+            ? ""
+            : toExGst(input.offerPrice, taxPercent, gstInclusive),
         sku: input.sku,
       }));
       const updateOk = await onUpdateBatch(updates);
@@ -254,7 +313,13 @@ const VariantLadderEditor = ({
         const next = { ...prev };
         readyToAdd.forEach((r) => delete next[r.key]);
         readyToUpdate.forEach((r) => {
-          next[r.key] = { ...next[r.key], original: { price: next[r.key].price, offerPrice: next[r.key].offerPrice, stock: next[r.key].stock } };
+          next[r.key] = {
+            ...next[r.key],
+            original: {
+              price: next[r.key].price,
+              offerPrice: next[r.key].offerPrice,
+            },
+          };
         });
         return next;
       });
@@ -262,12 +327,24 @@ const VariantLadderEditor = ({
   };
 
   /* ---------- custom size ---------- */
-  const cLabel = cUnit === "piece" ? "Single piece" : cUnit === "pack" ? `Pack of ${cQty || 0}` : `${cQty} ${cUnit}`;
-  const cQtyError = cQty !== "" && !(Number(cQty) > 0) ? "Quantity must be above 0." : null;
+  const cLabel =
+    cUnit === "piece"
+      ? "Single piece"
+      : cUnit === "pack"
+        ? `Pack of ${cQty || 0}`
+        : `${cQty} ${cUnit}`;
+  const cQtyError =
+    cQty !== "" && !(Number(cQty) > 0) ? "Quantity must be above 0." : null;
   const cPriceError = cQty !== "" ? validatePrice(cPrice) : null;
   const cOfferError = validateOfferPrice(cOffer, cPrice);
-  const cDuplicate = cQty !== "" && Number(cQty) > 0 && existing.includes(normalize(cLabel));
-  const canAddCustom = Number(cQty) > 0 && !cQtyError && !cPriceError && !cOfferError && !cDuplicate;
+  const cDuplicate =
+    cQty !== "" && Number(cQty) > 0 && existing.includes(normalize(cLabel));
+  const canAddCustom =
+    Number(cQty) > 0 &&
+    !cQtyError &&
+    !cPriceError &&
+    !cOfferError &&
+    !cDuplicate;
 
   const handleAddCustom = async () => {
     if (!canAddCustom || submittingCustom) return;
@@ -278,8 +355,8 @@ const VariantLadderEditor = ({
         unit: cUnit,
         label: cLabel,
         price: toExGst(cPrice, taxPercent, gstInclusive),
-        offerPrice: cOffer === "" ? "" : toExGst(cOffer, taxPercent, gstInclusive),
-        stock: Number(cStock) > 0 ? Number(cStock) : 0,
+        offerPrice:
+          cOffer === "" ? "" : toExGst(cOffer, taxPercent, gstInclusive),
         sku: generateVariantSku(productName, Number(cQty), cUnit),
       },
     ]);
@@ -288,7 +365,6 @@ const VariantLadderEditor = ({
       setCQty("");
       setCPrice("");
       setCOffer("");
-      setCStock("");
       setCustomOpen(false);
     }
   };
@@ -308,9 +384,15 @@ const VariantLadderEditor = ({
       <div className="flex items-center gap-2.5 flex-wrap mb-2.5">
         <h5 className="!text-[12.5px] !font-semibold !leading-[1.2] !m-0 text-[var(--mk-ink-900)]">
           Add the standard ladder{" "}
-          <span className="font-normal text-[var(--mk-ink-400)]">— {ladderBadgeLabel(sizeSystem)}</span>
+          <span className="font-normal text-[var(--mk-ink-400)]">
+            — {ladderBadgeLabel(sizeSystem)}
+          </span>
         </h5>
-        <GstToggle checked={gstInclusive} onChange={setGstInclusive} taxPercent={taxPercent} />
+        <GstToggle
+          checked={gstInclusive}
+          onChange={setGstInclusive}
+          taxPercent={taxPercent}
+        />
       </div>
 
       {/* KG/ML/UNIT selector — switches which standard ladder is shown.
@@ -339,75 +421,93 @@ const VariantLadderEditor = ({
       </div>
 
       <div className="space-y-2">
-        <div className="hidden sm:grid grid-cols-[88px_1fr_1fr_84px_1fr] gap-2.5 px-0.5">
-          {["SIZE", priceLabel, "OFFER ₹ (OPTIONAL)", "STOCK", "SKU (AUTO)"].map((h) => (
-            <span key={h} className="text-[10px] font-semibold uppercase tracking-wide text-[var(--mk-ink-400)]">
+        <div className="hidden sm:grid grid-cols-[88px_1fr_1fr_1fr] gap-2.5 px-0.5">
+          {["SIZE", priceLabel, "OFFER ₹ (OPTIONAL)", "SKU (AUTO)"].map((h) => (
+            <span
+              key={h}
+              className="text-[10px] font-semibold uppercase tracking-wide text-[var(--mk-ink-400)]"
+            >
               {h}
             </span>
           ))}
         </div>
 
-        {rows.map(({ qty, unit, key, input, isExisting, priceError, offerError }) => {
-          const label = formatSizeLabel(qty, unit);
-          const hint = priceHint(input.price);
-          const sku = isExisting ? input.sku : generateVariantSku(productName, qty, unit);
+        {rows.map(
+          ({ qty, unit, key, input, isExisting, priceError, offerError }) => {
+            const label = formatSizeLabel(qty, unit);
+            const hint = priceHint(input.price);
+            const sku = isExisting
+              ? input.sku
+              : generateVariantSku(productName, qty, unit);
 
-          return (
-            <div key={key} className="grid grid-cols-2 sm:grid-cols-[88px_1fr_1fr_84px_1fr] gap-2.5 items-start py-1">
-              {/* Size — always read-only, existing or new */}
-              <span className="pt-2 text-[12.5px] font-semibold text-[var(--mk-ink-900)]">{label}</span>
+            return (
+              <div
+                key={key}
+                className="grid grid-cols-2 sm:grid-cols-[88px_1fr_1fr_1fr] gap-2.5 items-start py-1"
+              >
+                {/* Size — always read-only, existing or new */}
+                <span className="pt-2 text-[12.5px] font-semibold text-[var(--mk-ink-900)]">
+                  {label}
+                </span>
 
-              {/* List price — always editable, pre-filled from the stored
+                {/* List price — always editable, pre-filled from the stored
                   variant when one exists */}
-              <div>
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={input.price}
-                  onChange={(e) => updateLadderInput(qty, unit, { price: e.target.value })}
-                  placeholder="0.00"
-                  className={fldClass(!!priceError)}
-                />
-                {priceError ? (
-                  <p className="text-[10.5px] font-medium text-[var(--mk-dgr)] mt-0.5">{priceError}</p>
-                ) : (
-                  hint && <p className="text-[10.5px] text-[var(--mk-ink-400)] mt-0.5">{hint}</p>
-                )}
-              </div>
+                <div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={input.price}
+                    onChange={(e) =>
+                      updateLadderInput(qty, unit, { price: e.target.value })
+                    }
+                    placeholder="0.00"
+                    className={fldClass(!!priceError)}
+                  />
+                  {priceError ? (
+                    <p className="text-[10.5px] font-medium text-[var(--mk-dgr)] mt-0.5">
+                      {priceError}
+                    </p>
+                  ) : (
+                    hint && (
+                      <p className="text-[10.5px] text-[var(--mk-ink-400)] mt-0.5">
+                        {hint}
+                      </p>
+                    )
+                  )}
+                </div>
 
-              {/* Offer — always editable, pre-filled if the variant has one */}
-              <div>
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={input.offerPrice}
-                  onChange={(e) => updateLadderInput(qty, unit, { offerPrice: e.target.value })}
-                  placeholder="lower than list"
-                  className={fldClass(!!offerError)}
-                />
-                {offerError && <p className="text-[10.5px] font-medium text-[var(--mk-dgr)] mt-0.5">{offerError}</p>}
-              </div>
+                {/* Offer — always editable, pre-filled if the variant has one */}
+                <div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={input.offerPrice}
+                    onChange={(e) =>
+                      updateLadderInput(qty, unit, {
+                        offerPrice: e.target.value,
+                      })
+                    }
+                    placeholder="lower than list"
+                    className={fldClass(!!offerError)}
+                  />
+                  {offerError && (
+                    <p className="text-[10.5px] font-medium text-[var(--mk-dgr)] mt-0.5">
+                      {offerError}
+                    </p>
+                  )}
+                </div>
 
-              {/* Stock — always editable; existing rows start from the
-                  stored quantity, new rows default to 0 */}
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={input.stock}
-                onChange={(e) => updateLadderInput(qty, unit, { stock: e.target.value })}
-                placeholder="0"
-                className={fldClass(false)}
-              />
-
-              {/* SKU — always read-only: the variant's stored SKU, or
+                {/* SKU — always read-only: the variant's stored SKU, or
                   auto-generated for a not-yet-created size */}
-              <span className="pt-2 text-[11.5px] text-[var(--mk-ink-400)] break-all">{sku}</span>
-            </div>
-          );
-        })}
+                <span className="pt-2 text-[11.5px] text-[var(--mk-ink-400)] break-all">
+                  {sku}
+                </span>
+              </div>
+            );
+          },
+        )}
       </div>
 
       <div className="flex items-center gap-3 mt-3 flex-wrap">
@@ -438,10 +538,12 @@ const VariantLadderEditor = ({
 
         {customOpen && (
           <div className="mt-2.5 p-3 rounded-lg border border-dashed border-[#C9CFDA] bg-white">
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               <div className="flex flex-col gap-1">
                 <label className="text-[11px] font-medium text-[var(--mk-ink-500)]">
-                  {sizeSystem.units.includes("pack") ? "Count / pack of" : "Quantity"}
+                  {sizeSystem.units.includes("pack")
+                    ? "Count / pack of"
+                    : "Quantity"}
                 </label>
                 <input
                   type="number"
@@ -452,11 +554,21 @@ const VariantLadderEditor = ({
                   placeholder="e.g. 200"
                   className={fldClass(!!cQtyError)}
                 />
-                {cQtyError && <span className="text-[11px] font-medium text-[var(--mk-dgr)]">{cQtyError}</span>}
+                {cQtyError && (
+                  <span className="text-[11px] font-medium text-[var(--mk-dgr)]">
+                    {cQtyError}
+                  </span>
+                )}
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-medium text-[var(--mk-ink-500)]">Unit</label>
-                <select value={cUnit} onChange={(e) => setCUnit(e.target.value)} className={fldClass(false)}>
+                <label className="text-[11px] font-medium text-[var(--mk-ink-500)]">
+                  Unit
+                </label>
+                <select
+                  value={cUnit}
+                  onChange={(e) => setCUnit(e.target.value)}
+                  className={fldClass(false)}
+                >
                   {sizeSystem.units.map((u) => (
                     <option key={u} value={u}>
                       {u}
@@ -465,7 +577,9 @@ const VariantLadderEditor = ({
                 </select>
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-medium text-[var(--mk-ink-500)]">{priceLabel}</label>
+                <label className="text-[11px] font-medium text-[var(--mk-ink-500)]">
+                  {priceLabel}
+                </label>
                 <input
                   type="number"
                   min="0"
@@ -476,13 +590,21 @@ const VariantLadderEditor = ({
                   className={fldClass(!!cPriceError)}
                 />
                 {cPriceError ? (
-                  <span className="text-[11px] font-medium text-[var(--mk-dgr)]">{cPriceError}</span>
+                  <span className="text-[11px] font-medium text-[var(--mk-dgr)]">
+                    {cPriceError}
+                  </span>
                 ) : (
-                  priceHint(cPrice) && <span className="text-[11px] text-[var(--mk-ink-400)]">{priceHint(cPrice)}</span>
+                  priceHint(cPrice) && (
+                    <span className="text-[11px] text-[var(--mk-ink-400)]">
+                      {priceHint(cPrice)}
+                    </span>
+                  )
                 )}
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-medium text-[var(--mk-ink-500)]">Offer price ₹ (optional)</label>
+                <label className="text-[11px] font-medium text-[var(--mk-ink-500)]">
+                  Offer price ₹ (optional)
+                </label>
                 <input
                   type="number"
                   min="0"
@@ -492,23 +614,17 @@ const VariantLadderEditor = ({
                   placeholder="lower than list"
                   className={fldClass(!!cOfferError)}
                 />
-                {cOfferError && <span className="text-[11px] font-medium text-[var(--mk-dgr)]">{cOfferError}</span>}
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-medium text-[var(--mk-ink-500)]">Opening stock</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={cStock}
-                  onChange={(e) => setCStock(e.target.value)}
-                  placeholder="0"
-                  className={fldClass(false)}
-                />
+                {cOfferError && (
+                  <span className="text-[11px] font-medium text-[var(--mk-dgr)]">
+                    {cOfferError}
+                  </span>
+                )}
               </div>
             </div>
             {cDuplicate && (
-              <p className="text-[11.5px] font-medium text-[var(--mk-dgr)] mt-2">{cLabel} has already been added.</p>
+              <p className="text-[11.5px] font-medium text-[var(--mk-dgr)] mt-2">
+                {cLabel} has already been added.
+              </p>
             )}
             <button
               type="button"

@@ -12,7 +12,15 @@ import { useEffect, useRef, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { useDispatch, useSelector } from "react-redux";
 import { toast } from "react-hot-toast";
-import { X, Plus, Trash2, AlertTriangle, Boxes, Eye, FileText } from "lucide-react";
+import {
+  X,
+  Plus,
+  Trash2,
+  AlertTriangle,
+  Boxes,
+  Eye,
+  FileText,
+} from "lucide-react";
 
 import {
   getProductById,
@@ -31,7 +39,11 @@ import { getAllCategoryList } from "../../redux/slices/categorySlice";
 import { getAllTaxes } from "../../redux/slices/taxSlice";
 import { getAllBrands } from "../../redux/slices/brandSlice";
 import { uploadImage } from "../../redux/slices/imageSlice";
-import { addVariant, updateVariant, deleteVariant } from "../../redux/slices/variantSlice";
+import {
+  addVariant,
+  updateVariant,
+  deleteVariant,
+} from "../../redux/slices/variantSlice";
 
 import Drawer from "../common/Drawer";
 import Modal from "../common/Modal";
@@ -43,11 +55,15 @@ import VariantRow from "../form/VariantRow";
 import VariantLadderEditor from "../form/VariantLadderEditor";
 import ProductVariantEditor from "../form/ProductVariantEditor";
 import { productHealth } from "../../utils/productHealth";
-import { inferSizeSystemFromVariants, ladderBadgeLabel } from "../../utils/variantSizeSystems";
+import {
+  inferSizeSystemFromVariants,
+  ladderBadgeLabel,
+} from "../../utils/variantSizeSystems";
 
 const FORM_ID = "product-detail-drawer-form";
 
-const imageUrl = (path) => `${import.meta.env.VITE_API_BASE_URL}/admin/images/${path}`;
+const imageUrl = (path) =>
+  `${import.meta.env.VITE_API_BASE_URL}/admin/images/${path}`;
 
 // Fixed two-slot document set — the API's `documentType` field accepts "COA"
 // and "SDS" (confirmed against the real dev API); the second slot is
@@ -57,6 +73,8 @@ const DOCUMENT_TYPES = [
   { type: "COA", label: "COA" },
   { type: "SDS", label: "SDS / MSDS" },
 ];
+
+const STOCK_UNIT_OPTIONS = ["KG", "G", "L", "ML", "UNIT"];
 
 const formatBytes = (bytes) => {
   const kb = bytes / 1024;
@@ -83,16 +101,35 @@ const fldClass = (hasError) =>
 
 const Field = ({ label, help, error, children }) => (
   <div className="flex flex-col gap-1.5 mb-3.5">
-    <label className="text-[12.5px] font-medium text-[var(--mk-ink-700)]">{label}</label>
+    <label className="text-[12.5px] font-medium text-[var(--mk-ink-700)]">
+      {label}
+    </label>
     {children}
-    {help && !error && <span className="text-[11.5px] text-[var(--mk-ink-400)]">{help}</span>}
-    {error && <span className="text-[11.5px] font-medium text-[var(--mk-dgr)]">{error}</span>}
+    {help && !error && (
+      <span className="text-[11.5px] text-[var(--mk-ink-400)]">{help}</span>
+    )}
+    {error && (
+      <span className="text-[11.5px] font-medium text-[var(--mk-dgr)]">
+        {error}
+      </span>
+    )}
   </div>
 );
 
-const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, viewOnly = false }) => {
+const ProductDetailDrawer = ({
+  productId,
+  open,
+  onClose,
+  onSaved,
+  onDeleted,
+  viewOnly = false,
+}) => {
   const dispatch = useDispatch();
-  const { singleProduct: product, loading, documents = [] } = useSelector((state) => state.product || {});
+  const {
+    singleProduct: product,
+    loading,
+    documents = [],
+  } = useSelector((state) => state.product || {});
   const { allCategoryList = [] } = useSelector((state) => state.category || {});
   const { taxes = [] } = useSelector((state) => state.taxes || {});
   const { brands = [] } = useSelector((state) => state.brand || {});
@@ -158,7 +195,9 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
   const watchedName = watch("name");
   const watchedCategoryId = watch("categoryId");
   const watchedTaxPercent = watch("taxPercent");
-  const watchedCategoryName = allCategoryList.find((c) => String(c.id) === String(watchedCategoryId))?.name;
+  const watchedCategoryName = allCategoryList.find(
+    (c) => String(c.id) === String(watchedCategoryId),
+  )?.name;
 
   useEffect(() => {
     dispatch(getAllCategoryList());
@@ -167,7 +206,8 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
   }, [dispatch]);
 
   const refetch = () => productId && dispatch(getProductById(productId));
-  const refetchDocuments = () => productId && dispatch(getProductDocuments(productId));
+  const refetchDocuments = () =>
+    productId && dispatch(getProductDocuments(productId));
 
   useEffect(() => {
     if (!open) return;
@@ -192,6 +232,8 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
         hsnCode: "",
         actualPrice: "",
         discountPrice: "",
+        stock: "",
+        stockUnit: "KG",
         description: "",
       });
       setImagePath("");
@@ -215,6 +257,8 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
         hsnCode: product.hsnCode ?? "",
         actualPrice: product.actualPrice ?? "",
         discountPrice: product.discountPrice ?? "",
+        stock: product.stock ?? product.quantity ?? "",
+        stockUnit: product.stockUnit ?? product.stock_unit ?? "KG",
         description: product.description ?? "",
       });
       setImagePath(product.productImage || "");
@@ -225,35 +269,64 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
       setSpecGroups(
         rawGroups.map((g) => ({
           title: g.title ?? "",
-          items: (g.items || []).map((it) => ({ key: it.key ?? "", value: it.value ?? "" })),
+          items: (g.items || []).map((it) => ({
+            key: it.key ?? "",
+            value: it.value ?? "",
+          })),
         })),
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product, isCreate]);
 
+  // True only once `product` actually belongs to the product currently
+  // being edited — `product` is Redux's single shared `singleProduct` slot,
+  // which still holds the PREVIOUSLY viewed product's data (old category,
+  // old variants) for one render while `getProductById(productId)` is in
+  // flight for a newly opened/switched product. VariantLadderEditor's
+  // default-tab detection locks in on the first real data it sees, so
+  // feeding it that stale cross-product data below would lock the ladder
+  // tab to the wrong product's unit family before the real fetch resolves.
+  const productDataReady = !isCreate && !!product && product.id === productId;
   const variants = (!isCreate && product?.variants) || [];
   const images = (!isCreate && product?.images) || [];
   const flags = !isCreate && product ? productHealth(product) : [];
 
   /* ================= SPECIFICATION (inline, no modal) ================= */
   const addSpecGroup = () =>
-    setSpecGroups((prev) => [...prev, { title: "", items: [{ key: "", value: "" }] }]);
-  const removeSpecGroup = (gi) => setSpecGroups((prev) => prev.filter((_, i) => i !== gi));
+    setSpecGroups((prev) => [
+      ...prev,
+      { title: "", items: [{ key: "", value: "" }] },
+    ]);
+  const removeSpecGroup = (gi) =>
+    setSpecGroups((prev) => prev.filter((_, i) => i !== gi));
   const updateSpecGroupTitle = (gi, title) =>
-    setSpecGroups((prev) => prev.map((g, i) => (i === gi ? { ...g, title } : g)));
+    setSpecGroups((prev) =>
+      prev.map((g, i) => (i === gi ? { ...g, title } : g)),
+    );
   const addSpecItem = (gi) =>
     setSpecGroups((prev) =>
-      prev.map((g, i) => (i === gi ? { ...g, items: [...g.items, { key: "", value: "" }] } : g)),
+      prev.map((g, i) =>
+        i === gi ? { ...g, items: [...g.items, { key: "", value: "" }] } : g,
+      ),
     );
   const removeSpecItem = (gi, ii) =>
     setSpecGroups((prev) =>
-      prev.map((g, i) => (i === gi ? { ...g, items: g.items.filter((_, j) => j !== ii) } : g)),
+      prev.map((g, i) =>
+        i === gi ? { ...g, items: g.items.filter((_, j) => j !== ii) } : g,
+      ),
     );
   const updateSpecItem = (gi, ii, field, value) =>
     setSpecGroups((prev) =>
       prev.map((g, i) =>
-        i === gi ? { ...g, items: g.items.map((it, j) => (j === ii ? { ...it, [field]: value } : it)) } : g,
+        i === gi
+          ? {
+              ...g,
+              items: g.items.map((it, j) =>
+                j === ii ? { ...it, [field]: value } : it,
+              ),
+            }
+          : g,
       ),
     );
 
@@ -338,7 +411,10 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
           return null;
         });
       } else {
-        toast.error(res.payload || "Upload failed — showing your selected image locally, but it hasn't been saved");
+        toast.error(
+          res.payload ||
+            "Upload failed — showing your selected image locally, but it hasn't been saved",
+        );
       }
       return;
     }
@@ -353,7 +429,10 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
     const uploadRes = await dispatch(uploadImage(finalFile));
     if (uploadImage.fulfilled.match(uploadRes)) {
       const addRes = await dispatch(
-        addProductImage({ productId: product.id, data: { path: uploadRes.payload.path } }),
+        addProductImage({
+          productId: product.id,
+          data: { imageUrl: uploadRes.payload.path, isPrimary: false },
+        }),
       );
       if (addProductImage.fulfilled.match(addRes)) {
         toast.success("Image added");
@@ -390,7 +469,8 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
      One fixed upload slot per type. The same + button uploads (POST) when
      no document of that type exists yet, or replaces (PUT) the existing
      one — never two separate buttons for that. */
-  const documentFileUrl = (doc) => `${import.meta.env.VITE_API_BASE_URL}${doc.fileUrl}`;
+  const documentFileUrl = (doc) =>
+    `${import.meta.env.VITE_API_BASE_URL}${doc.fileUrl}`;
 
   const handleViewDocument = (doc) => {
     window.open(documentFileUrl(doc), "_blank", "noopener,noreferrer");
@@ -405,7 +485,8 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
       return;
     }
 
-    const label = DOCUMENT_TYPES.find((d) => d.type === docType)?.label || docType;
+    const label =
+      DOCUMENT_TYPES.find((d) => d.type === docType)?.label || docType;
     const formData = new FormData();
     formData.append("documentType", docType);
     formData.append("documentTitle", label);
@@ -413,8 +494,16 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
 
     setUploadingDocType(docType);
     const res = existingDoc
-      ? await dispatch(updateProductDocument({ productId: product.id, documentId: existingDoc.id, data: formData }))
-      : await dispatch(addProductDocument({ productId: product.id, data: formData }));
+      ? await dispatch(
+          updateProductDocument({
+            productId: product.id,
+            documentId: existingDoc.id,
+            data: formData,
+          }),
+        )
+      : await dispatch(
+          addProductDocument({ productId: product.id, data: formData }),
+        );
     setUploadingDocType(null);
 
     const success = existingDoc
@@ -425,7 +514,10 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
       setDocSizes((prev) => ({ ...prev, [docType]: file.size }));
       refetchDocuments();
     } else {
-      toast.error(res.payload || `Failed to ${existingDoc ? "replace" : "upload"} ${label}`);
+      toast.error(
+        res.payload ||
+          `Failed to ${existingDoc ? "replace" : "upload"} ${label}`,
+      );
     }
   };
 
@@ -433,7 +525,10 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
     if (!deleteDocTarget || !product) return;
     setDeletingDoc(true);
     const res = await dispatch(
-      deleteProductDocument({ productId: product.id, documentId: deleteDocTarget.id }),
+      deleteProductDocument({
+        productId: product.id,
+        documentId: deleteDocTarget.id,
+      }),
     );
     setDeletingDoc(false);
     const removedType = deleteDocTarget.documentType;
@@ -471,7 +566,9 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
       ? await dispatch(addProduct(payload))
       : await dispatch(updateProduct({ id: product.id, data: payload }));
 
-    const success = isCreate ? addProduct.fulfilled.match(res) : updateProduct.fulfilled.match(res);
+    const success = isCreate
+      ? addProduct.fulfilled.match(res)
+      : updateProduct.fulfilled.match(res);
     if (!success) {
       setSaving(false);
       toast.error(res.payload || "Error");
@@ -495,10 +592,15 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
         .filter((g) => g.title || g.items.length > 0);
 
       const specRes = await dispatch(
-        saveProductSpecification({ productId: product.id, data: { specification: cleanedGroups } }),
+        saveProductSpecification({
+          productId: product.id,
+          data: { specification: cleanedGroups },
+        }),
       );
       if (!saveProductSpecification.fulfilled.match(specRes)) {
-        toast.error(specRes.payload || "Product saved, but specifications failed to save");
+        toast.error(
+          specRes.payload || "Product saved, but specifications failed to save",
+        );
       }
     }
 
@@ -518,7 +620,10 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
               variantName: v.label,
               packSizeId: 1,
               price: v.price,
-              discountedPrice: v.offerPrice !== "" && v.offerPrice != null ? v.offerPrice : v.price,
+              discountedPrice:
+                v.offerPrice !== "" && v.offerPrice != null
+                  ? v.offerPrice
+                  : v.price,
               // Same sku VariantLadderEditor already generated and showed in
               // the preview table — never a second formula computed
               // independently at submit time.
@@ -530,14 +635,18 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
           ),
         ),
       );
-      const failedCount = variantResults.filter((r) => !addVariant.fulfilled.match(r)).length;
+      const failedCount = variantResults.filter(
+        (r) => !addVariant.fulfilled.match(r),
+      ).length;
       setSaving(false);
       if (failedCount > 0) {
         toast.error(
           `Product added, but ${failedCount} of ${stagedVariants.length} variant${stagedVariants.length === 1 ? "" : "s"} failed to save — open the product to add ${failedCount === 1 ? "it" : "them"} again.`,
         );
       } else {
-        toast.success(`Product added with ${stagedVariants.length} variant${stagedVariants.length === 1 ? "" : "s"}`);
+        toast.success(
+          `Product added with ${stagedVariants.length} variant${stagedVariants.length === 1 ? "" : "s"}`,
+        );
       }
     } else {
       setSaving(false);
@@ -575,20 +684,25 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
             price: v.price,
             discountedPrice: v.offerPrice !== "" ? v.offerPrice : v.price,
             sku: v.sku,
-            stockQuantity: v.stock,
             status: true,
             imagePath: [],
           }),
         ),
       ),
     );
-    const failedCount = results.filter((r) => !addVariant.fulfilled.match(r)).length;
+    const failedCount = results.filter(
+      (r) => !addVariant.fulfilled.match(r),
+    ).length;
     refetch();
     if (failedCount > 0) {
-      toast.error(`${failedCount} of ${additions.length} variant${additions.length === 1 ? "" : "s"} failed to add`);
+      toast.error(
+        `${failedCount} of ${additions.length} variant${additions.length === 1 ? "" : "s"} failed to add`,
+      );
       return false;
     }
-    toast.success(`Added ${additions.length} variant${additions.length === 1 ? "" : "s"}`);
+    toast.success(
+      `Added ${additions.length} variant${additions.length === 1 ? "" : "s"}`,
+    );
     return true;
   };
 
@@ -611,13 +725,19 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
         ),
       ),
     );
-    const failedCount = results.filter((r) => !updateVariant.fulfilled.match(r)).length;
+    const failedCount = results.filter(
+      (r) => !updateVariant.fulfilled.match(r),
+    ).length;
     refetch();
     if (failedCount > 0) {
-      toast.error(`${failedCount} of ${updates.length} variant${updates.length === 1 ? "" : "s"} failed to update`);
+      toast.error(
+        `${failedCount} of ${updates.length} variant${updates.length === 1 ? "" : "s"} failed to update`,
+      );
       return false;
     }
-    toast.success(`Updated ${updates.length} variant${updates.length === 1 ? "" : "s"}`);
+    toast.success(
+      `Updated ${updates.length} variant${updates.length === 1 ? "" : "s"}`,
+    );
     return true;
   };
 
@@ -697,7 +817,9 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3.5">
               <Field label="Product name" error={errors.name?.message}>
                 <input
-                  {...register("name", { required: "Product name is required" })}
+                  {...register("name", {
+                    required: "Product name is required",
+                  })}
                   placeholder="e.g. Aloe Vera Gel"
                   className={fldClass(errors.name)}
                 />
@@ -705,7 +827,9 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
 
               <Field label="Category" error={errors.categoryId?.message}>
                 <select
-                  {...register("categoryId", { required: "Category is required" })}
+                  {...register("categoryId", {
+                    required: "Category is required",
+                  })}
                   className={fldClass(errors.categoryId)}
                 >
                   <option value="">Select category</option>
@@ -717,7 +841,10 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
                 </select>
               </Field>
 
-              <Field label="GST slab" help="Applied once at checkout · prices stored ex-GST">
+              <Field
+                label="GST slab"
+                help="Applied once at checkout · prices stored ex-GST"
+              >
                 <select
                   {...register("taxId")}
                   className={fldClass(false)}
@@ -736,7 +863,11 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
               </Field>
 
               <Field label="HSN code">
-                <input {...register("hsnCode")} placeholder="e.g. 12119029" className={fldClass(false)} />
+                <input
+                  {...register("hsnCode")}
+                  placeholder="e.g. 12119029"
+                  className={fldClass(false)}
+                />
               </Field>
 
               {/* <Field label="Brand" error={errors.brandId?.message}>
@@ -753,22 +884,65 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
                 </select>
               </Field> */}
 
-              <Field label="Actual price (₹)" error={errors.actualPrice?.message}>
+              <Field
+                label="Actual price (₹)"
+                error={errors.actualPrice?.message}
+              >
                 <input
                   type="number"
                   step="0.01"
-                  {...register("actualPrice", { required: "Required", min: { value: 0, message: "Must be ≥ 0" } })}
+                  {...register("actualPrice", {
+                    required: "Required",
+                    min: { value: 0, message: "Must be ≥ 0" },
+                  })}
                   className={fldClass(errors.actualPrice)}
                 />
               </Field>
 
-              <Field label="Discount price (₹)" error={errors.discountPrice?.message}>
+              <Field
+                label="Discount price (₹)"
+                error={errors.discountPrice?.message}
+              >
                 <input
                   type="number"
                   step="0.01"
-                  {...register("discountPrice", { required: "Required", min: { value: 0, message: "Must be ≥ 0" } })}
+                  {...register("discountPrice", {
+                    required: "Required",
+                    min: { value: 0, message: "Must be ≥ 0" },
+                  })}
                   className={fldClass(errors.discountPrice)}
                 />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3.5">
+              <Field label="Stock Quantity" error={errors.stock?.message}>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  {...register("stock", {
+                    min: { value: 0, message: "Must be ≥ 0" },
+                  })}
+                  className={fldClass(errors.stock)}
+                  placeholder="0"
+                />
+              </Field>
+
+              <Field label="Stock Unit" error={errors.stockUnit?.message}>
+                <select
+                  {...register("stockUnit", {
+                    required: "Stock unit is required",
+                  })}
+                  className={fldClass(errors.stockUnit)}
+                  defaultValue="KG"
+                >
+                  {STOCK_UNIT_OPTIONS.map((unit) => (
+                    <option key={unit} value={unit}>
+                      {unit}
+                    </option>
+                  ))}
+                </select>
               </Field>
             </div>
 
@@ -778,33 +952,57 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
               <Controller
                 name="description"
                 control={control}
-                render={({ field }) => <RichTextEditor value={field.value} onChange={field.onChange} />}
+                render={({ field }) => (
+                  <RichTextEditor
+                    value={field.value}
+                    onChange={field.onChange}
+                  />
+                )}
               />
             </Field>
 
             {/* IMAGES */}
             <div className="mt-1 mb-[20px]">
               <h4 className="!text-[14px] !font-semibold !leading-[1.2] !m-0 text-[var(--mk-ink-900)] mb-2">
-                Images <span className="text-[12px] font-normal text-[var(--mk-ink-400)]">variant-first, product fallback</span>
+                Images{" "}
+                <span className="text-[12px] font-normal text-[var(--mk-ink-400)]">
+                  variant-first, product fallback
+                </span>
               </h4>
               <div className="flex gap-2.5 flex-wrap">
-                <input ref={primaryImageInputRef} type="file" accept="image/*" onChange={handlePrimaryImageChange} className="hidden" />
+                <input
+                  ref={primaryImageInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePrimaryImageChange}
+                  className="hidden"
+                />
                 {/* primaryPreviewUrl (the just-applied local blob) always wins
                     over imagePath (the confirmed server path) while a fresh
                     pick is mid-upload, so the box never sits empty. */}
                 {(() => {
-                  const primarySrc = primaryPreviewUrl || (imagePath ? imageUrl(imagePath) : null);
+                  const primarySrc =
+                    primaryPreviewUrl ||
+                    (imagePath ? imageUrl(imagePath) : null);
                   return (
                     <div className="relative group">
                       <button
                         type="button"
                         onClick={() => primaryImageInputRef.current?.click()}
-                        aria-label={primarySrc ? "Replace primary image" : "Add primary image"}
+                        aria-label={
+                          primarySrc
+                            ? "Replace primary image"
+                            : "Add primary image"
+                        }
                         title={primarySrc ? "Click to replace" : "Add image"}
                         className="w-16 h-16 rounded-lg border-[1.5px] border-dashed border-[var(--mk-line)] hover:border-[var(--mk-primary)]/40 flex items-center justify-center text-[var(--mk-ink-400)] text-center overflow-hidden cursor-pointer"
                       >
                         {primarySrc ? (
-                          <img src={primarySrc} alt="Primary" className="w-full h-full object-cover" />
+                          <img
+                            src={primarySrc}
+                            alt="Primary"
+                            className="w-full h-full object-cover"
+                          />
                         ) : (
                           <span className="flex flex-col items-center gap-0.5">
                             <Plus size={16} />
@@ -860,8 +1058,15 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
                     images, shown in their own boxes immediately while their
                     uploads are still in flight. */}
                 {galleryPreviews.map((p) => (
-                  <div key={p.tempId} className="relative w-16 h-16 rounded-lg overflow-hidden border border-[var(--mk-line)]">
-                    <img src={p.url} alt="Uploading" className="w-full h-full object-cover" />
+                  <div
+                    key={p.tempId}
+                    className="relative w-16 h-16 rounded-lg overflow-hidden border border-[var(--mk-line)]"
+                  >
+                    <img
+                      src={p.url}
+                      alt="Uploading"
+                      className="w-full h-full object-cover"
+                    />
                     <span className="absolute inset-0 flex items-center justify-center bg-black/30 text-white text-[10px] font-medium">
                       Uploading…
                     </span>
@@ -870,7 +1075,13 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
 
                 {!isCreate && (
                   <>
-                    <input ref={galleryInputRef} type="file" accept="image/*" onChange={handleGalleryFileChange} className="hidden" />
+                    <input
+                      ref={galleryInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleGalleryFileChange}
+                      className="hidden"
+                    />
                     <button
                       type="button"
                       onClick={() => galleryInputRef.current?.click()}
@@ -914,7 +1125,12 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
                       </span> */}
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-[3px] rounded-full text-[11.5px] font-semibold bg-[var(--mk-primary-50)] text-[var(--mk-primary)]">
                         <span className="w-1.5 h-1.5 rounded-full bg-current shrink-0" />
-                        {ladderBadgeLabel(inferSizeSystemFromVariants(variants, product?.category?.name))}
+                        {ladderBadgeLabel(
+                          inferSizeSystemFromVariants(
+                            variants,
+                            product?.category?.name,
+                          ),
+                        )}
                       </span>
                       <span className="text-[var(--mk-ink-400)]">|</span>
                       <span className="text-[12px] text-[var(--mk-ink-500)]">
@@ -924,7 +1140,9 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
                   </div>
                 )}
 
-                <h4 className="!text-[14px] !font-semibold !leading-[1.2] !m-0 text-[var(--mk-ink-900)] mb-1">Variants</h4>
+                <h4 className="!text-[14px] !font-semibold !leading-[1.2] !m-0 text-[var(--mk-ink-900)] mb-1">
+                  Variants
+                </h4>
                 <p className="!text-[12px] !m-0 text-[var(--mk-ink-400)] mb-2">
                   price lives here · the product shows From ₹min
                 </p>
@@ -933,7 +1151,8 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
                   <div className="border border-dashed border-[var(--mk-line)] rounded-lg py-[12px] flex flex-col items-center gap-1 text-center">
                     <Boxes size={16} className="text-[var(--mk-ink-400)]" />
                     <p className="text-[12px] text-[var(--mk-ink-500)]">
-                      No variants yet — this product cannot go Active until one priced variant exists.
+                      No variants yet — this product cannot go Active until one
+                      priced variant exists.
                     </p>
                   </div>
                 ) : (
@@ -941,13 +1160,18 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
                     <table className="w-full text-[12.5px]">
                       <thead>
                         <tr className="bg-[#FAFBFD] text-[10.5px] uppercase tracking-wide text-[var(--mk-ink-400)]">
-                          <th className="text-left font-semibold px-2.5 py-2 whitespace-nowrap">Size</th>
-                          <th className="text-left font-semibold px-2.5 py-2 whitespace-nowrap">SKU</th>
-                          <th className="text-right font-semibold px-2.5 py-2 whitespace-nowrap">List ₹ (ex-GST)</th>
+                          <th className="text-left font-semibold px-2.5 py-2 whitespace-nowrap">
+                            Size
+                          </th>
+                          <th className="text-left font-semibold px-2.5 py-2 whitespace-nowrap">
+                            SKU
+                          </th>
+                          <th className="text-right font-semibold px-2.5 py-2 whitespace-nowrap">
+                            List ₹ (ex-GST)
+                          </th>
                           <th className="text-right font-semibold px-2.5 py-2 whitespace-nowrap">
                             Incl. GST {product?.taxPercent ?? 0}%
                           </th>
-                          <th className="text-right font-semibold px-2.5 py-2 whitespace-nowrap">Stock</th>
                           {!viewOnly && <th className="px-2 py-2" />}
                         </tr>
                       </thead>
@@ -960,11 +1184,17 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
                               sku: v.sku || "—",
                               price: v.price ?? 0,
                               offerPrice:
-                                v.discountPrice != null && Number(v.discountPrice) !== Number(v.price) ? v.discountPrice : "",
-                              stock: v.stockQuantity ?? 0,
+                                v.discountPrice != null &&
+                                Number(v.discountPrice) !== Number(v.price)
+                                  ? v.discountPrice
+                                  : "",
                             }}
                             taxPercent={product?.taxPercent}
-                            onRemove={viewOnly ? undefined : () => setDeleteVariantTarget(v)}
+                            onRemove={
+                              viewOnly
+                                ? undefined
+                                : () => setDeleteVariantTarget(v)
+                            }
                           />
                         ))}
                       </tbody>
@@ -977,10 +1207,12 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
                     variant's price/stock is remove-and-re-add, not inline. */}
                 {!viewOnly && (
                   <VariantLadderEditor
-                    categoryName={product?.category?.name}
+                    categoryName={
+                      productDataReady ? product?.category?.name : undefined
+                    }
                     productName={product?.name}
                     taxPercent={product?.taxPercent}
-                    existingVariants={variants}
+                    existingVariants={productDataReady ? variants : undefined}
                     onAddBatch={handleAddVariantBatch}
                     onUpdateBatch={handleUpdateVariantBatch}
                   />
@@ -1013,17 +1245,24 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
                 </div>
 
                 {specGroups.length === 0 ? (
-                  <p className="text-[12.5px] text-[var(--mk-ink-400)]">No specifications added yet.</p>
+                  <p className="text-[12.5px] text-[var(--mk-ink-400)]">
+                    No specifications added yet.
+                  </p>
                 ) : (
                   <div className="flex flex-col gap-3">
                     {specGroups.map((group, gi) => (
-                      <div key={gi} className="rounded-xl border border-[var(--mk-line)] bg-white p-4">
+                      <div
+                        key={gi}
+                        className="rounded-xl border border-[var(--mk-line)] bg-white p-4"
+                      >
                         <div className="flex items-center gap-2 mb-3">
                           <input
                             type="text"
                             placeholder="Group title (e.g. Product Details)"
                             value={group.title}
-                            onChange={(e) => updateSpecGroupTitle(gi, e.target.value)}
+                            onChange={(e) =>
+                              updateSpecGroupTitle(gi, e.target.value)
+                            }
                             className={`${fldClass(false)} flex-1 font-semibold`}
                           />
                           <IconButton
@@ -1042,14 +1281,23 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
                                 type="text"
                                 placeholder="Key"
                                 value={item.key}
-                                onChange={(e) => updateSpecItem(gi, ii, "key", e.target.value)}
+                                onChange={(e) =>
+                                  updateSpecItem(gi, ii, "key", e.target.value)
+                                }
                                 className={`${fldClass(false)} flex-1`}
                               />
                               <input
                                 type="text"
                                 placeholder="Value"
                                 value={item.value}
-                                onChange={(e) => updateSpecItem(gi, ii, "value", e.target.value)}
+                                onChange={(e) =>
+                                  updateSpecItem(
+                                    gi,
+                                    ii,
+                                    "value",
+                                    e.target.value,
+                                  )
+                                }
                                 className={`${fldClass(false)} flex-1`}
                               />
                               <IconButton
@@ -1094,12 +1342,19 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
                     const isUploading = uploadingDocType === type;
                     const sizeBytes = doc ? docSizes[type] : null;
                     return (
-                      <div key={type} className="rounded-xl border border-[var(--mk-line)] bg-white p-4">
+                      <div
+                        key={type}
+                        className="rounded-xl border border-[var(--mk-line)] bg-white p-4"
+                      >
                         <div className="flex items-center justify-between">
-                          <span className="text-[14px] font-semibold text-[var(--mk-ink-900)]">{label}</span>
+                          <span className="text-[14px] font-semibold text-[var(--mk-ink-900)]">
+                            {label}
+                          </span>
                           <div className="flex items-center gap-2">
                             {isUploading && (
-                              <span className="text-[11.5px] text-[var(--mk-ink-400)]">Uploading…</span>
+                              <span className="text-[11.5px] text-[var(--mk-ink-400)]">
+                                Uploading…
+                              </span>
                             )}
                             <input
                               ref={(el) => {
@@ -1108,15 +1363,21 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
                               type="file"
                               accept="application/pdf"
                               className="hidden"
-                              onChange={(e) => handleDocumentFileChange(e, type, doc)}
+                              onChange={(e) =>
+                                handleDocumentFileChange(e, type, doc)
+                              }
                             />
                             <IconButton
                               icon={Plus}
-                              label={doc ? `Replace ${label}` : `Upload ${label}`}
+                              label={
+                                doc ? `Replace ${label}` : `Upload ${label}`
+                              }
                               tone="purple"
                               size={16}
                               disabled={isUploading}
-                              onClick={() => documentInputRefs.current[type]?.click()}
+                              onClick={() =>
+                                documentInputRefs.current[type]?.click()
+                              }
                             />
                           </div>
                         </div>
@@ -1130,7 +1391,9 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
                                   {doc.fileName}
                                 </p>
                                 {sizeBytes != null && (
-                                  <p className="text-[12px] text-[var(--mk-ink-400)] mt-0.5">{formatBytes(sizeBytes)}</p>
+                                  <p className="text-[12px] text-[var(--mk-ink-400)] mt-0.5">
+                                    {formatBytes(sizeBytes)}
+                                  </p>
                                 )}
                               </div>
                             </div>
@@ -1158,7 +1421,6 @@ const ProductDetailDrawer = ({ productId, open, onClose, onSaved, onDeleted, vie
                 </div>
               </div>
             )}
-
           </form>
         )}
       </Drawer>

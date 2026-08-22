@@ -79,9 +79,13 @@ export function ladderBadgeLabel(sizeSystem) {
 }
 
 // Reads a real, already-persisted variant's name back into {qty, unit} —
-// the inverse of formatSizeLabel. Only recognizes the exact formats this
-// app itself generates ("25 g", "1 kg", "Single piece", "Pack of 5", and
-// the no-space "25g" variant some legacy/imported rows may have) — a
+// the inverse of formatSizeLabel. Recognizes the short forms this app
+// itself generates ("25 g", "1 kg", "Single piece", "Pack of 5", the
+// no-space "25g" some legacy/imported rows may have) plus the long-form
+// spellings ("gram(s)", "kilogram(s)/kgs", "milliliter(s)", "liter(s)/
+// litre(s)") a variant imported from elsewhere may use, since the unit
+// family (mass vs volume) must be detected from whatever spelling the real
+// data actually contains, not just this app's own output format. A
 // variant named something else entirely (free text) returns null, since
 // there's no size to infer from it.
 export function parseVariantLabel(label) {
@@ -90,9 +94,18 @@ export function parseVariantLabel(label) {
   if (/^single piece$/i.test(s)) return { qty: 1, unit: "piece" };
   const packMatch = s.match(/^pack of (\d+(?:\.\d+)?)$/i);
   if (packMatch) return { qty: Number(packMatch[1]), unit: "pack" };
-  const m = s.match(/^(\d+(?:\.\d+)?)\s*(kg|g|ml|l)$/i);
+  const m = s.match(
+    /^(\d+(?:\.\d+)?)\s*(kilograms|kilogram|kgs|kg|grams|gram|g|milliliters|milliliter|millilitres|millilitre|ml|litres|litre|liters|liter|l)$/i,
+  );
   if (!m) return null;
-  const unit = m[2].toLowerCase() === "l" ? "L" : m[2].toLowerCase();
+  const rawUnit = m[2].toLowerCase();
+  const unit = /^(kilograms|kilogram|kgs|kg)$/.test(rawUnit)
+    ? "kg"
+    : /^(grams|gram|g)$/.test(rawUnit)
+      ? "g"
+      : /^(milliliters|milliliter|millilitres|millilitre|ml)$/.test(rawUnit)
+        ? "ml"
+        : "L"; // litres|litre|liters|liter|l
   return { qty: Number(m[1]), unit };
 }
 

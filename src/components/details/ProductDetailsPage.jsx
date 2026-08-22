@@ -86,7 +86,10 @@ const ProductDetailsPage = () => {
   const productVariants = useMemo(() => product?.variants || [], [product]);
   const productImages = useMemo(() => product?.images || [], [product]);
   const specItems = useMemo(
-    () => (product?.specifications?.length ? product.specifications : product?.specItems) || [],
+    () =>
+      (product?.specifications?.length
+        ? product.specifications
+        : product?.specItems) || [],
     [product],
   );
 
@@ -105,7 +108,7 @@ const ProductDetailsPage = () => {
       const addRes = await dispatch(
         addProductImage({
           productId: id,
-          data: { path: uploadRes.payload.path },
+          data: { imageUrl: uploadRes.payload.path, isPrimary: false },
         }),
       );
       if (addProductImage.fulfilled.match(addRes)) {
@@ -138,7 +141,10 @@ const ProductDetailsPage = () => {
   const openSpecForm = () => {
     setSpecRows(
       specItems.length
-        ? specItems.map((s) => ({ key: s.key ?? s.name ?? "", value: s.value ?? "" }))
+        ? specItems.map((s) => ({
+            key: s.key ?? s.name ?? "",
+            value: s.value ?? "",
+          }))
         : [{ key: "", value: "" }],
     );
     setShowSpecForm(true);
@@ -150,7 +156,8 @@ const ProductDetailsPage = () => {
     );
   };
 
-  const addSpecRow = () => setSpecRows((prev) => [...prev, { key: "", value: "" }]);
+  const addSpecRow = () =>
+    setSpecRows((prev) => [...prev, { key: "", value: "" }]);
 
   const removeSpecRow = (index) =>
     setSpecRows((prev) => prev.filter((_, i) => i !== index));
@@ -360,13 +367,18 @@ const ProductDetailsPage = () => {
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-medium text-[var(--brand-purple)] bg-[var(--brand-purple)]/8 hover:bg-[var(--brand-purple)]/14 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <UploadCloud size={14} />
-                  {uploadingGalleryImage || imageUploading ? "Uploading..." : "Add Image"}
+                  {uploadingGalleryImage || imageUploading
+                    ? "Uploading..."
+                    : "Add Image"}
                 </button>
               </>
             }
           >
             {productImages.length === 0 ? (
-              <EmptyState icon={Images} title="No additional images for this product" />
+              <EmptyState
+                icon={Images}
+                title="No additional images for this product"
+              />
             ) : (
               <div className="flex flex-wrap gap-3">
                 {productImages.map((img) => (
@@ -436,9 +448,8 @@ const ProductDetailsPage = () => {
                           )}
                       </div>
                       <span className="text-[12px] font-medium text-gray-500">
-                        Stock: {v.stockQuantity ?? "—"}
                         {v.reservedQuantity != null &&
-                          ` (${v.reservedQuantity} reserved)`}
+                          `Reserved: ${v.reservedQuantity}`}
                       </span>
                     </div>
                   </div>
@@ -530,14 +541,18 @@ const ProductDetailsPage = () => {
                   type="text"
                   placeholder="Key (e.g. Weight)"
                   value={row.key}
-                  onChange={(e) => handleSpecRowChange(i, "key", e.target.value)}
+                  onChange={(e) =>
+                    handleSpecRowChange(i, "key", e.target.value)
+                  }
                   className="w-1/3 px-3 py-2 rounded-lg border border-gray-200 text-[13px] font-medium text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[var(--brand-purple)]/25 focus:border-[var(--brand-purple)]"
                 />
                 <input
                   type="text"
                   placeholder="Value (e.g. 500g)"
                   value={row.value}
-                  onChange={(e) => handleSpecRowChange(i, "value", e.target.value)}
+                  onChange={(e) =>
+                    handleSpecRowChange(i, "value", e.target.value)
+                  }
                   className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-[13px] font-medium text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[var(--brand-purple)]/25 focus:border-[var(--brand-purple)]"
                 />
                 <button

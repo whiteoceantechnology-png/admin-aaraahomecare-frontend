@@ -10,26 +10,40 @@ const fmtMoney = (n) =>
   `₹${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const VariantRow = ({ variant, taxPercent, onRemove, onClick }) => {
-  const { label, sku, price, offerPrice, stock } = variant;
-  const sellPrice = offerPrice !== "" && offerPrice != null ? Number(offerPrice) : Number(price || 0);
+  const { label, sku, price, offerPrice } = variant;
+  const sellPrice =
+    offerPrice !== "" && offerPrice != null
+      ? Number(offerPrice)
+      : Number(price || 0);
   const inclGst = sellPrice * (1 + Number(taxPercent || 0) / 100);
   const hasOffer = offerPrice !== "" && offerPrice != null;
 
   return (
     <tr
       onClick={onClick}
-      className={onClick ? "cursor-pointer hover:bg-[var(--mk-primary-50)]/40 transition-colors" : undefined}
+      className={
+        onClick
+          ? "cursor-pointer hover:bg-[var(--mk-primary-50)]/40 transition-colors"
+          : undefined
+      }
     >
-      <td className="px-2.5 py-1.5 text-[12.5px] font-medium text-[var(--mk-ink-900)] whitespace-nowrap">{label}</td>
-      <td className="px-2.5 py-1.5 text-[var(--mk-ink-400)] whitespace-nowrap">{sku}</td>
+      <td className="px-2.5 py-1.5 text-[12.5px] font-medium text-[var(--mk-ink-900)] whitespace-nowrap">
+        {label}
+      </td>
+      <td className="px-2.5 py-1.5 text-[var(--mk-ink-400)] whitespace-nowrap">
+        {sku}
+      </td>
       <td className="px-2.5 py-1.5 text-right tabular-nums text-[12.5px] text-[var(--mk-ink-700)] whitespace-nowrap">
         {fmtMoney(sellPrice)}
-        {hasOffer && <span className="text-[var(--mk-ink-400)] line-through ml-1.5">{fmtMoney(price)}</span>}
+        {hasOffer && (
+          <span className="text-[var(--mk-ink-400)] line-through ml-1.5">
+            {fmtMoney(price)}
+          </span>
+        )}
       </td>
       <td className="px-2.5 py-1.5 text-right tabular-nums text-[12.5px] text-[var(--mk-ink-700)] whitespace-nowrap">
         {fmtMoney(inclGst)}
       </td>
-      <td className="px-2.5 py-1.5 text-right tabular-nums text-[12.5px] text-[var(--mk-ink-700)]">{stock ?? 0}</td>
       {onRemove && (
         <td className="px-2 py-1.5 text-right">
           <button

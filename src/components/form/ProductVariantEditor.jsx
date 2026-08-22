@@ -12,8 +12,15 @@ import { Boxes } from "lucide-react";
 import VariantRow from "./VariantRow";
 import VariantLadderEditor from "./VariantLadderEditor";
 
-const ProductVariantEditor = ({ categoryName, productName, taxPercent, variants, onChange }) => {
-  const removeVariant = (index) => onChange(variants.filter((_, i) => i !== index));
+const ProductVariantEditor = ({
+  categoryName,
+  productName,
+  taxPercent,
+  variants,
+  onChange,
+}) => {
+  const removeVariant = (index) =>
+    onChange(variants.filter((_, i) => i !== index));
 
   const handleAddBatch = (additions) => {
     onChange([...variants, ...additions]);
@@ -33,7 +40,8 @@ const ProductVariantEditor = ({ categoryName, productName, taxPercent, variants,
         <div className="border border-dashed border-[var(--mk-line)] rounded-lg py-6 flex flex-col items-center gap-1.5 text-center mb-3">
           <Boxes size={20} className="text-[var(--mk-ink-400)]" />
           <p className="text-[12.5px] text-[var(--mk-ink-500)]">
-            No variants yet — this product cannot go Active until at least one priced variant exists.
+            No variants yet — this product cannot go Active until at least one
+            priced variant exists.
           </p>
         </div>
       ) : (
@@ -43,15 +51,23 @@ const ProductVariantEditor = ({ categoryName, productName, taxPercent, variants,
               <tr className="bg-[#FAFBFD] text-[10px] uppercase tracking-wide text-[var(--mk-ink-400)]">
                 <th className="text-left font-semibold px-2.5 py-2">Size</th>
                 <th className="text-left font-semibold px-2.5 py-2">SKU</th>
-                <th className="text-right font-semibold px-2.5 py-2">List ₹ (ex-GST)</th>
-                <th className="text-right font-semibold px-2.5 py-2">Incl. GST</th>
-                <th className="text-right font-semibold px-2.5 py-2">Stock</th>
+                <th className="text-right font-semibold px-2.5 py-2">
+                  List ₹ (ex-GST)
+                </th>
+                <th className="text-right font-semibold px-2.5 py-2">
+                  Incl. GST
+                </th>
                 <th className="text-right font-semibold px-2.5 py-2">Remove</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--mk-line)]">
               {variants.map((v, i) => (
-                <VariantRow key={`${v.label}-${i}`} variant={v} taxPercent={taxPercent} onRemove={() => removeVariant(i)} />
+                <VariantRow
+                  key={`${v.label}-${i}`}
+                  variant={v}
+                  taxPercent={taxPercent}
+                  onRemove={() => removeVariant(i)}
+                />
               ))}
             </tbody>
           </table>
