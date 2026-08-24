@@ -1,18 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { toast } from "react-hot-toast";
 import { Info } from "lucide-react";
 import {
   getInventoryList,
   getLowStockInventory,
-  clearSelectedInventory,
 } from "../../redux/slices/inventorySlice";
 import { getAllCategoryList } from "../../redux/slices/categorySlice";
 
 import VariantTable from "../table/VariantTable";
 import InventoryDetailDrawer from "../details/InventoryDetailDrawer";
-import ProductDetailDrawer from "../details/ProductDetailDrawer";
-import BulkStockUpdateModal from "../form/BulkStockUpdateModal";
 
 const LOW_STOCK_THRESHOLD = 10;
 const SEARCH_DEBOUNCE_MS = 400;
@@ -23,12 +19,16 @@ const SEARCH_DEBOUNCE_MS = 400;
 // data: everything here is a real, paginated server response.
 const Variant = ({ title = "Inventory" }) => {
   const dispatch = useDispatch();
-  const { items, meta, loading, error, lowStock } = useSelector((state) => state.inventory || {});
+  const { items, meta, loading, error, lowStock } = useSelector(
+    (state) => state.inventory || {},
+  );
   // Same category source Products already uses (getAllCategoryList /
   // state.category.allCategoryList) — not a second implementation, just
   // fetched here too since Inventory has to work standalone even if the
   // admin never visited Products first in this session.
-  const { allCategoryList: categories = [] } = useSelector((state) => state.category || {});
+  const { allCategoryList: categories = [] } = useSelector(
+    (state) => state.category || {},
+  );
 
   const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -39,9 +39,6 @@ const Variant = ({ title = "Inventory" }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
 
-  const [selectedIds, setSelectedIds] = useState(new Set());
-  const [showBulkUpdate, setShowBulkUpdate] = useState(false);
-  const [viewingVariantId, setViewingVariantId] = useState(null);
   const [viewingProductId, setViewingProductId] = useState(null);
 
   useEffect(() => {
@@ -117,31 +114,18 @@ const Variant = ({ title = "Inventory" }) => {
   useEffect(() => {
     loadList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dispatch, searchTerm, selectedCategoryIds, statusFilter, lowStockOnly, currentPage, itemsPerPage]);
+  }, [
+    dispatch,
+    searchTerm,
+    selectedCategoryIds,
+    statusFilter,
+    lowStockOnly,
+    currentPage,
+    itemsPerPage,
+  ]);
 
   const activeList = lowStockOnly ? lowStock : { items, meta, loading, error };
   const rows = activeList.items || [];
-
-  const toggleSelect = (id, checked) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-  };
-
-  const toggleSelectAll = (checked) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      rows.forEach((r) => (checked ? next.add(r.id) : next.delete(r.id)));
-      return next;
-    });
-  };
-
-  const handleRefreshAfterMutation = () => {
-    loadList();
-  };
 
   return (
     <div className="space-y-4">
@@ -151,7 +135,7 @@ const Variant = ({ title = "Inventory" }) => {
           {title}
         </h2>
         <p className="text-[12px] font-medium text-[var(--mk-ink-500)] mt-1 leading-[1.5]">
-          Stock levels across every variant — search, adjust, reserve/release, and bulk-update from here.
+          Stock levels by product with expandable variant details.
         </p>
       </div>
 
@@ -159,8 +143,8 @@ const Variant = ({ title = "Inventory" }) => {
       <div className="flex items-start gap-2 px-[12px] py-[10px] rounded-[10px] bg-[var(--mk-info-bg)] border border-[#C9DBFA] text-[#1D4ED8] text-[12px] leading-[1.4]">
         <Info size={13} className="mt-0.5 shrink-0" />
         <div>
-          <b>New variants are still created inside a product.</b> Open a row here to update stock, adjust
-          quantities, or reserve/release units — or select rows and use Bulk update stock.
+          <b>Products are the stock management level.</b> Expand a product to
+          view its variants.
         </div>
       </div>
 
@@ -172,7 +156,7 @@ const Variant = ({ title = "Inventory" }) => {
           loading={activeList.loading}
           error={activeList.error}
           onRetry={loadList}
-          onView={(item) => setViewingVariantId(item.id)}
+          onView={(item) => setViewingProductId(item.productId)}
           searchTerm={searchInput}
           onSearchChange={setSearchInput}
           categories={categories}
@@ -193,49 +177,14 @@ const Variant = ({ title = "Inventory" }) => {
             setItemsPerPage(value);
             setCurrentPage(1);
           }}
-          selectedIds={selectedIds}
-          onToggleSelect={toggleSelect}
-          onToggleSelectAll={toggleSelectAll}
-          onOpenBulkUpdate={() => setShowBulkUpdate(true)}
         />
       </div>
 
-      {/* STOCK DETAILS DRAWER — real detail + write actions */}
       <InventoryDetailDrawer
-        variantId={viewingVariantId}
-        open={!!viewingVariantId}
-        onClose={() => {
-          setViewingVariantId(null);
-          dispatch(clearSelectedInventory());
-        }}
-        onViewProduct={(productId) => {
-          setViewingVariantId(null);
-          dispatch(clearSelectedInventory());
-          setViewingProductId(productId);
-        }}
-        onMutated={handleRefreshAfterMutation}
-      />
-
-      {/* PRODUCT DETAIL DRAWER (cross-navigation target — variants are managed here) */}
-      <ProductDetailDrawer
         productId={viewingProductId}
         open={!!viewingProductId}
         onClose={() => setViewingProductId(null)}
-        onSaved={handleRefreshAfterMutation}
-        onDeleted={handleRefreshAfterMutation}
-      />
-
-      {/* BULK STOCK UPDATE */}
-      <BulkStockUpdateModal
-        open={showBulkUpdate}
-        onClose={() => setShowBulkUpdate(false)}
-        rows={rows.filter((r) => selectedIds.has(r.id))}
-        onDone={() => {
-          setShowBulkUpdate(false);
-          setSelectedIds(new Set());
-          toast.success("Stock updated");
-          handleRefreshAfterMutation();
-        }}
+        onMutated={loadList}
       />
     </div>
   );

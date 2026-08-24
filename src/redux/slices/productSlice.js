@@ -22,13 +22,14 @@ export const getAllProducts = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       const res = await fetchProducts();
-      return res.data.data;
+      const data = res.data?.data;
+      return Array.isArray(data) ? data : data?.products || data?.items || [];
     } catch (err) {
       return rejectWithValue(
         err.response?.data?.message || "Failed to fetch products",
       );
     }
-  }
+  },
 );
 
 // GET ONE
@@ -43,7 +44,7 @@ export const getProductById = createAsyncThunk(
         err.response?.data?.message || "Failed to fetch product",
       );
     }
-  }
+  },
 );
 
 // ADD
@@ -58,7 +59,7 @@ export const addProduct = createAsyncThunk(
         err.response?.data?.message || "Failed to add product",
       );
     }
-  }
+  },
 );
 
 // UPDATE
@@ -73,7 +74,7 @@ export const updateProduct = createAsyncThunk(
         err.response?.data?.message || "Failed to update product",
       );
     }
-  }
+  },
 );
 
 // ADD IMAGE
@@ -88,7 +89,7 @@ export const addProductImage = createAsyncThunk(
         err.response?.data?.message || "Failed to add image",
       );
     }
-  }
+  },
 );
 
 // DELETE IMAGE
@@ -103,7 +104,7 @@ export const deleteProductImage = createAsyncThunk(
         err.response?.data?.message || "Failed to delete image",
       );
     }
-  }
+  },
 );
 
 // SAVE (CREATE/UPDATE) SPECIFICATION
@@ -118,7 +119,7 @@ export const saveProductSpecification = createAsyncThunk(
         err.response?.data?.message || "Failed to save specification",
       );
     }
-  }
+  },
 );
 
 // DELETE SPECIFICATION
@@ -133,7 +134,7 @@ export const deleteProductSpecification = createAsyncThunk(
         err.response?.data?.message || "Failed to delete specification",
       );
     }
-  }
+  },
 );
 
 /* ---------------- Technical documents (COA / MSDS / SDS) ---------------- */
@@ -150,7 +151,7 @@ export const getProductDocuments = createAsyncThunk(
         err.response?.data?.message || "Failed to fetch documents",
       );
     }
-  }
+  },
 );
 
 // UPLOAD DOCUMENT — `data` is a FormData built by the caller
@@ -165,7 +166,7 @@ export const addProductDocument = createAsyncThunk(
         err.response?.data?.message || "Failed to upload document",
       );
     }
-  }
+  },
 );
 
 // UPDATE DOCUMENT — title, file, or both
@@ -180,7 +181,7 @@ export const updateProductDocument = createAsyncThunk(
         err.response?.data?.message || "Failed to update document",
       );
     }
-  }
+  },
 );
 
 // DELETE DOCUMENT
@@ -195,7 +196,7 @@ export const deleteProductDocument = createAsyncThunk(
         err.response?.data?.message || "Failed to delete document",
       );
     }
-  }
+  },
 );
 
 // BULK IMPORT (xlsx/xls)
@@ -210,7 +211,7 @@ export const importProducts = createAsyncThunk(
         err.response?.data?.message || "Failed to import products",
       );
     }
-  }
+  },
 );
 
 // DELETE
@@ -225,7 +226,7 @@ export const deleteProduct = createAsyncThunk(
         err.response?.data?.message || "Failed to delete product",
       );
     }
-  }
+  },
 );
 
 const productSlice = createSlice({
@@ -282,7 +283,7 @@ const productSlice = createSlice({
       // UPDATE
       .addCase(updateProduct.fulfilled, (state, action) => {
         const index = state.products.findIndex(
-          (p) => p.id === action.payload.id
+          (p) => p.id === action.payload.id,
         );
         if (index !== -1) {
           state.products[index] = action.payload;
@@ -291,9 +292,7 @@ const productSlice = createSlice({
 
       // DELETE
       .addCase(deleteProduct.fulfilled, (state, action) => {
-        state.products = state.products.filter(
-          (p) => p.id !== action.payload
-        );
+        state.products = state.products.filter((p) => p.id !== action.payload);
       })
 
       // DOCUMENTS

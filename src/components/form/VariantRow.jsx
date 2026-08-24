@@ -33,7 +33,7 @@ const VariantRow = ({ variant, taxPercent, onRemove, onClick }) => {
       <td className="px-2.5 py-1.5 text-[var(--mk-ink-400)] whitespace-nowrap">
         {sku}
       </td>
-      <td className="px-2.5 py-1.5 text-right tabular-nums text-[12.5px] text-[var(--mk-ink-700)] whitespace-nowrap">
+      <td className="px-2.5 py-1.5 text-left tabular-nums text-[12.5px] text-[var(--mk-ink-700)] whitespace-nowrap">
         {fmtMoney(sellPrice)}
         {hasOffer && (
           <span className="text-[var(--mk-ink-400)] line-through ml-1.5">
@@ -41,9 +41,9 @@ const VariantRow = ({ variant, taxPercent, onRemove, onClick }) => {
           </span>
         )}
       </td>
-      <td className="px-2.5 py-1.5 text-right tabular-nums text-[12.5px] text-[var(--mk-ink-700)] whitespace-nowrap">
+      {/* <td className="px-2.5 py-1.5 text-right tabular-nums text-[12.5px] text-[var(--mk-ink-700)] whitespace-nowrap">
         {fmtMoney(inclGst)}
-      </td>
+      </td> */}
       {onRemove && (
         <td className="px-2 py-1.5 text-right">
           <button

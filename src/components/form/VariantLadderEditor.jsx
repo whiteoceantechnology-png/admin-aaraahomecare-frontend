@@ -74,14 +74,19 @@ const VariantLadderEditor = ({
   existingVariants,
   onAddBatch,
   onUpdateBatch,
+  unitFamily: controlledUnitFamily,
+  onUnitFamilyChange,
 }) => {
-  const hasRealVariants =
-    Array.isArray(existingVariants) && existingVariants.length > 0;
+  const ladderVariants = (existingVariants || []).map((variant) => ({
+    ...variant,
+    variantName: variant.variantName ?? variant.label,
+  }));
+  const hasRealVariants = ladderVariants.some((variant) => variant.id);
   // What the product's own data (real variants, else category) suggests —
   // used only to pick the KG/ML/UNIT toggle's default. All three options
   // are always offered for every product/category — see the toggle below.
   const inferredSystem = hasRealVariants
-    ? inferSizeSystemFromVariants(existingVariants, categoryName)
+    ? inferSizeSystemFromVariants(ladderVariants, categoryName)
     : getSizeSystemForCategory(categoryName);
 
   // KG → the kg-only bulk ladder (1/5/10 kg), always. ML → whatever
@@ -93,10 +98,7 @@ const VariantLadderEditor = ({
   // 25 g/50 g/… rows never matched any ladder step and the ladder rendered
   // a blank, unrelated 1/5/10 kg row set instead of pre-filling them. UNIT
   // → the piece/pack ladder, always.
-  const mlSystem =
-    inferredSystem.key === "BULK_KG" || inferredSystem.key === "PACK"
-      ? SIZE_SYSTEMS.VOLUME
-      : inferredSystem;
+  const mlSystem = SIZE_SYSTEMS.VOLUME;
 
   // Default is set once real data (existing variants, or else a chosen
   // category) is available — see the ref-guarded effect below for why it
@@ -104,16 +106,17 @@ const VariantLadderEditor = ({
   // before the product's real data has loaded).
   const [unitFamily, setUnitFamily] = useState("kg");
   const unitFamilyDefaultSetRef = useRef(false);
+  const activeUnitFamily = controlledUnitFamily || unitFamily;
 
   const sizeSystem =
-    unitFamily === "kg"
+    activeUnitFamily === "kg"
       ? SIZE_SYSTEMS.BULK_KG
-      : unitFamily === "unit"
+      : activeUnitFamily === "unit"
         ? SIZE_SYSTEMS.PACK
         : mlSystem;
 
   const effectiveExistingLabels = existingVariants
-    ? existingVariants.map((v) => v.variantName)
+    ? ladderVariants.map((v) => v.variantName)
     : existingLabels;
   const existing = effectiveExistingLabels.map(normalize);
 
@@ -147,7 +150,7 @@ const VariantLadderEditor = ({
   useEffect(() => {
     const seed = {};
     sizeSystem.steps.forEach(([qty, unit]) => {
-      const match = findExistingVariantForStep(existingVariants, qty, unit);
+      const match = findExistingVariantForStep(ladderVariants, qty, unit);
       if (!match) {
         seed[stepKey(qty, unit)] = { price: "", offerPrice: "" };
         return;
@@ -162,6 +165,7 @@ const VariantLadderEditor = ({
       seed[stepKey(qty, unit)] = {
         ...original,
         variantId: match.id,
+        staged: !match.id,
         sku: match.sku,
         variantObj: match,
         original,
@@ -185,6 +189,11 @@ const VariantLadderEditor = ({
   // this only decides which one starts selected. Never reads the current
   // unitFamily/previous UI state — always recomputed from inferredSystem.
   useEffect(() => {
+    if (controlledUnitFamily) {
+      setUnitFamily(controlledUnitFamily);
+      unitFamilyDefaultSetRef.current = true;
+      return;
+    }
     if (unitFamilyDefaultSetRef.current) return;
     if (!hasRealVariants && !categoryName) return;
     unitFamilyDefaultSetRef.current = true;
@@ -216,17 +225,17 @@ const VariantLadderEditor = ({
     }));
   };
 
-  const priceHint = (price) => {
-    if (!(Number(price) > 0)) return null;
-    return gstInclusive
-      ? `stores ₹${toExGst(price, taxPercent, true).toFixed(2)} ex-GST`
-      : `storefront shows ₹${toInclGst(price, taxPercent).toFixed(2)} incl.`;
-  };
+  // const priceHint = (price) => {
+  //   if (!(Number(price) > 0)) return null;
+  //   return gstInclusive
+  //     ? `stores ₹${toExGst(price, taxPercent, true).toFixed(2)} ex-GST`
+  //     : `storefront shows ₹${toInclGst(price, taxPercent).toFixed(2)} incl.`;
+  // };
 
   const rows = sizeSystem.steps.map(([qty, unit]) => {
     const key = stepKey(qty, unit);
     const input = ladderInputs[key] || { price: "", offerPrice: "" };
-    const isExisting = !!input.variantId;
+    const isExisting = !!input.variantId || input.staged;
     // Existing rows are always "touched" — they already carry a real,
     // stored price the moment they're seeded.
     const touched = isExisting || input.price !== "" || input.offerPrice !== "";
@@ -408,9 +417,12 @@ const VariantLadderEditor = ({
           <button
             key={opt.key}
             type="button"
-            onClick={() => setUnitFamily(opt.key)}
+            onClick={() => {
+              setUnitFamily(opt.key);
+              onUnitFamilyChange?.(opt.key);
+            }}
             className={`h-7 px-3 rounded-full text-[12px] font-semibold cursor-pointer transition-colors ${
-              unitFamily === opt.key
+              activeUnitFamily === opt.key
                 ? "bg-[var(--mk-primary)] text-white"
                 : "bg-white border border-[var(--mk-line)] text-[var(--mk-ink-500)] hover:border-[#C9CFDA]"
             }`}
@@ -435,7 +447,7 @@ const VariantLadderEditor = ({
         {rows.map(
           ({ qty, unit, key, input, isExisting, priceError, offerError }) => {
             const label = formatSizeLabel(qty, unit);
-            const hint = priceHint(input.price);
+            // const hint = priceHint(input.price);
             const sku = isExisting
               ? input.sku
               : generateVariantSku(productName, qty, unit);
@@ -464,7 +476,7 @@ const VariantLadderEditor = ({
                     placeholder="0.00"
                     className={fldClass(!!priceError)}
                   />
-                  {priceError ? (
+                  {/* {priceError ? (
                     <p className="text-[10.5px] font-medium text-[var(--mk-dgr)] mt-0.5">
                       {priceError}
                     </p>
@@ -474,7 +486,7 @@ const VariantLadderEditor = ({
                         {hint}
                       </p>
                     )
-                  )}
+                  )} */}
                 </div>
 
                 {/* Offer — always editable, pre-filled if the variant has one */}
@@ -589,7 +601,7 @@ const VariantLadderEditor = ({
                   placeholder="0.00"
                   className={fldClass(!!cPriceError)}
                 />
-                {cPriceError ? (
+                {/* {cPriceError ? (
                   <span className="text-[11px] font-medium text-[var(--mk-dgr)]">
                     {cPriceError}
                   </span>
@@ -599,7 +611,7 @@ const VariantLadderEditor = ({
                       {priceHint(cPrice)}
                     </span>
                   )
-                )}
+                )} */}
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-[11px] font-medium text-[var(--mk-ink-500)]">

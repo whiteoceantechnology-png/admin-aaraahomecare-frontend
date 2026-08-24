@@ -116,7 +116,7 @@ const ProductForm = ({ onSubmit, onCancel, defaultValues = {}, loading = false }
         </div>
 
         {/* BRAND */}
-        <div className="flex flex-col">
+        {/* <div className="flex flex-col">
           <label className="text-[14px] font-medium text-gray-700 mb-1">
             Brand
           </label>
@@ -136,7 +136,7 @@ const ProductForm = ({ onSubmit, onCancel, defaultValues = {}, loading = false }
               {errors.brandId.message}
             </p>
           )}
-        </div>
+        </div> */}
 
         {/* TAX */}
         <div className="flex flex-col">

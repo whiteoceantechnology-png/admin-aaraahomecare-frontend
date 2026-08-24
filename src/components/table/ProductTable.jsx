@@ -1,5 +1,13 @@
 import { useState, useEffect, useRef } from "react";
-import { Download, Printer, SquarePen, Archive, AlertTriangle, AlignJustify, Image as ImageIcon } from "lucide-react";
+import {
+  Download,
+  Printer,
+  SquarePen,
+  Archive,
+  AlertTriangle,
+  AlignJustify,
+  Image as ImageIcon,
+} from "lucide-react";
 import DeleteConfirmationModal from "../details/DeleteConfirmationModal";
 import Pagination from "../common/Pagination";
 import IconButton from "../common/IconButton";
@@ -21,7 +29,21 @@ import {
   FILTER_ICON_SIZE,
 } from "../common/filterToolbarStyles";
 
-const fmtPrice = (n) => Number(n ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtPrice = (n) =>
+  Number(n ?? 0).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+const productImages = (value) =>
+  Array.isArray(value)
+    ? value.filter(Boolean)
+    : typeof value === "string" && value
+      ? [value]
+      : [];
+const stockLabel = (item) => {
+  if (item?.stock == null || item.stock === "") return "—";
+  return `${item.stock}${item.stockUnit ? ` ${item.stockUnit}` : ""}`;
+};
 
 const HEALTH_DEFS = [
   // { key: "all", label: "All" },
@@ -58,7 +80,7 @@ const ProductTable = ({
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
-  const [compact, setCompact] = useState(false);
+  const [compact] = useState(false);
   const [selected, setSelected] = useState(new Set());
   const [bulkArchiving, setBulkArchiving] = useState(false);
   const [statusConfirmTarget, setStatusConfirmTarget] = useState(null);
@@ -72,24 +94,28 @@ const ProductTable = ({
     setStatusConfirmTarget(null);
   };
 
-  const healthCount = (key) => data.filter((item) => productHealth(item).some((f) => f.key === key)).length;
-  const zeroPriceActiveCount = data.filter(
-    (item) => item?.status && !(Number(item?.discountPrice) > 0),
-  ).length;
-
+  const healthCount = (key) =>
+    data.filter((item) => productHealth(item).some((f) => f.key === key))
+      .length;
   // Multi-select category filter: all categories selected (or none loaded
   // yet) means no filtering — same as the old "All Categories" default.
   const allCategoriesSelected =
     categories.length === 0 || selectedCategoryIds.size === categories.length;
 
   const filteredData = data.filter((item) => {
-    if (!allCategoriesSelected && !selectedCategoryIds.has(String(item?.category?.id)))
+    if (
+      !allCategoriesSelected &&
+      !selectedCategoryIds.has(String(item?.category?.id))
+    )
       return false;
     if (statusFilter !== "all") {
       const isActive = statusFilter === "active";
       if (Boolean(item?.status) !== isActive) return false;
     }
-    if (healthFilter !== "all" && !productHealth(item).some((f) => f.key === healthFilter))
+    if (
+      healthFilter !== "all" &&
+      !productHealth(item).some((f) => f.key === healthFilter)
+    )
       return false;
     if (!searchTerm) return true;
     return [item?.name, item?.category?.name, item?.hsnCode].some((v) =>
@@ -110,7 +136,8 @@ const ProductTable = ({
   const currentItems = sortedData.slice(indexOfFirstItem, indexOfLastItem);
 
   const pageAllSelected =
-    currentItems.length > 0 && currentItems.every((item) => selected.has(item.id));
+    currentItems.length > 0 &&
+    currentItems.every((item) => selected.has(item.id));
 
   const toggleSelectAllOnPage = () => {
     setSelected((prev) => {
@@ -224,22 +251,29 @@ const ProductTable = ({
     {
       key: "productImage",
       header: "",
-      width: "56px",
-      render: (item) =>
-        item?.productImage ? (
-          <ImageCell
-            src={imageUrl(item.productImage)}
-            alt={item.name}
-            size={38}
-            onClick={() =>
-              setPreviewImage({ src: imageUrl(item.productImage), name: item?.name })
-            }
-          />
+      width: "150px",
+      render: (item) => {
+        const images = productImages(item?.productImage);
+        return images.length > 0 ? (
+          <div className="flex items-center gap-1.5">
+            {images.map((path, index) => (
+              <ImageCell
+                key={`${path}-${index}`}
+                src={imageUrl(path)}
+                alt={`${item.name} ${index + 1}`}
+                size={38}
+                onClick={() =>
+                  setPreviewImage({ src: imageUrl(path), name: item?.name })
+                }
+              />
+            ))}
+          </div>
         ) : (
           <div className="w-[38px] h-[38px] rounded-lg border-[1.5px] border-dashed border-[var(--mk-line)] bg-[#EEF1F6] flex items-center justify-center text-[var(--mk-ink-400)] shrink-0">
             <ImageIcon size={16} />
           </div>
-        ),
+        );
+      },
     },
     {
       key: "name",
@@ -267,7 +301,8 @@ const ProductTable = ({
             </button>
             <p className="text-[11.5px] leading-[1.3] text-[var(--mk-ink-400)] !mt-0.5 !mb-0 truncate max-w-[260px]">
               {item?.hsnCode ? `HSN ${item.hsnCode} · ` : ""}
-              {item?.variants?.length ?? 0} variant{(item?.variants?.length ?? 0) === 1 ? "" : "s"}
+              {item?.variants?.length ?? 0} variant
+              {(item?.variants?.length ?? 0) === 1 ? "" : "s"}
               {flags.length > 0 && ` · ${flags.map((f) => f.label).join(", ")}`}
             </p>
           </div>
@@ -282,6 +317,15 @@ const ProductTable = ({
       truncateWidth: "150px",
       className: "text-[var(--mk-ink-700)]",
       render: (item) => item?.category?.name || "—",
+    },
+    {
+      key: "brand",
+      header: "Brand",
+      width: "140px",
+      truncate: true,
+      truncateWidth: "120px",
+      className: "text-[var(--mk-ink-700)]",
+      render: (item) => item?.brand?.name || "—",
     },
     {
       key: "discountPrice",
@@ -314,6 +358,14 @@ const ProductTable = ({
       align: "right",
       className: "text-[var(--mk-ink-700)] tabular-nums",
       render: (item) => `${item?.taxPercent ?? 0}%`,
+    },
+    {
+      key: "stock",
+      header: "Stock",
+      width: "100px",
+      align: "right",
+      className: "text-[var(--mk-ink-700)] tabular-nums",
+      render: (item) => stockLabel(item),
     },
     {
       key: "status",
@@ -368,7 +420,15 @@ const ProductTable = ({
       <div className="flex items-center gap-1 p-[16px] overflow-x-auto border-b border-[var(--mk-line)]">
         <div className={FILTER_SEARCH_WRAP_CLASS}>
           <div className={FILTER_SEARCH_ICON_WRAP_CLASS}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[var(--mk-ink-400)]">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="text-[var(--mk-ink-400)]"
+            >
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
@@ -382,7 +442,11 @@ const ProductTable = ({
           />
         </div>
 
-        <CategoryFilterDropdown categories={categories} selectedIds={selectedCategoryIds} onChange={onCategoryChange} />
+        <CategoryFilterDropdown
+          categories={categories}
+          selectedIds={selectedCategoryIds}
+          onChange={onCategoryChange}
+        />
 
         <select
           value={statusFilter}
@@ -535,7 +599,11 @@ const ProductTable = ({
       <Modal
         open={!!statusConfirmTarget}
         onClose={() => setStatusConfirmTarget(null)}
-        title={statusConfirmTarget?.status ? "Mark as Out of Stock" : "Mark as In Stock"}
+        title={
+          statusConfirmTarget?.status
+            ? "Mark as Out of Stock"
+            : "Mark as In Stock"
+        }
         maxWidth="max-w-sm"
       >
         <p className="text-[13.5px] text-[var(--mk-ink-700)] px-1 pb-1">

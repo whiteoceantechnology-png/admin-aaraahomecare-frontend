@@ -4,16 +4,17 @@
 // conflict indicator) is derived from real order fields (status,
 // paymentStatus, totalAmount) via getOrderNextAction, never invented.
 import { useState, useEffect, useMemo } from "react";
-import { Eye, Pencil, Printer, PackageCheck, Ban, Undo2, Phone, History, CreditCard } from "lucide-react";
 import CommonTable from "../common/CommonTable";
 import Pagination from "../common/Pagination";
 import OrderStatusPill from "../common/OrderStatusPill";
 import OrderStatusDropdown from "../common/OrderStatusDropdown";
 import OrderActionDropdown from "../common/OrderActionDropdown";
-import OrderActionMenu from "../common/OrderActionMenu";
 import OrderDateFilter from "../common/OrderDateFilter";
 import { formatDate } from "../../utils/formatDate";
-import { getOrderNextAction, isConflictAction } from "../../utils/orderNextAction";
+import {
+  getOrderNextAction,
+  isConflictAction,
+} from "../../utils/orderNextAction";
 import { isPlacedStatus } from "../../utils/orderStatusStages";
 import {
   FILTER_SEARCH_WRAP_CLASS,
@@ -23,8 +24,6 @@ import {
 } from "../common/filterToolbarStyles";
 
 const hasValue = (v) => v !== null && v !== undefined;
-
-const PAID_FAMILY = ["paid", "completed", "success"];
 
 const titleCase = (s) =>
   (s || "")
@@ -49,13 +48,22 @@ const fmtMoney = (n) =>
 // unbucketed rather than silently folded into Completed; they're still
 // fully reachable via the Current Status filter and search.
 const ORDER_TABS = [
-  { key: "new", label: "New Orders", match: (status) => isPlacedStatus(status) },
+  {
+    key: "new",
+    label: "New Orders",
+    match: (status) => isPlacedStatus(status),
+  },
   {
     key: "processing",
     label: "Processing Orders",
-    match: (status) => isPlacedStatus(status) || status === "packed" || status === "shipped",
+    match: (status) =>
+      isPlacedStatus(status) || status === "packed" || status === "shipped",
   },
-  { key: "completed", label: "Completed Orders", match: (status) => status === "delivered" },
+  {
+    key: "completed",
+    label: "Completed Orders",
+    match: (status) => status === "delivered",
+  },
 ];
 
 const OrderTable = ({
@@ -63,8 +71,6 @@ const OrderTable = ({
   title = "Orders",
   onView,
   onProgressStatus,
-  onTrack,
-  onCancel,
   onRecordCod,
   onMarkPaid,
   recordingCodId = null,
@@ -86,8 +92,12 @@ const OrderTable = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
-  const paymentOptions = [...new Set(data.map((o) => o?.paymentStatus).filter(Boolean))];
-  const statusOptions = [...new Set(data.map((o) => o?.status).filter(Boolean))];
+  const paymentOptions = [
+    ...new Set(data.map((o) => o?.paymentStatus).filter(Boolean)),
+  ];
+  const statusOptions = [
+    ...new Set(data.map((o) => o?.status).filter(Boolean)),
+  ];
 
   // Tabs overlap by design (see ORDER_TABS above), so an order can count
   // toward more than one tab — this loop checks every tab per order rather
@@ -112,7 +122,8 @@ const OrderTable = ({
     const status = (item?.status || "").toLowerCase();
     const tabDef = ORDER_TABS.find((t) => t.key === activeTab);
     if (tabDef && !tabDef.match(status)) return false;
-    if (paymentFilter !== "all" && item?.paymentStatus !== paymentFilter) return false;
+    if (paymentFilter !== "all" && item?.paymentStatus !== paymentFilter)
+      return false;
     if (statusFilter !== "all" && item?.status !== statusFilter) return false;
     if (dateStart) {
       const created = item?.createdAt ? new Date(item.createdAt) : null;
@@ -155,41 +166,6 @@ const OrderTable = ({
     setCurrentPage(1);
   }, [searchTerm, paymentFilter, statusFilter, activeTab, dateStart, dateEnd]);
 
-  // Row-level "⋮" menu. Actions that need full order-detail context (invoice/
-  // packing-slip content, contact info, refund amount, activity timeline)
-  // open the drawer via onView instead of faking that context from a
-  // collapsed row — the drawer's own menu then performs the real action.
-  // Edit/Cancel/Mark Paid already have everything they need from the row, so
-  // they fire directly.
-  const buildRowMenuItems = (item) => {
-    const cancelled = (item?.status || "").toLowerCase() === "cancelled";
-    const isPaid = PAID_FAMILY.includes((item?.paymentStatus || "").toLowerCase());
-    return [
-      { key: "view", label: "View Order", icon: Eye, onClick: () => onView?.(item) },
-      { key: "edit", label: "Edit Order", icon: Pencil, onClick: () => onTrack?.(item) },
-      { key: "invoice", label: "Print Invoice", icon: Printer, onClick: () => onView?.(item) },
-      { key: "packing", label: "Print Packing Slip", icon: PackageCheck, onClick: () => onView?.(item) },
-      {
-        key: "markPaid",
-        label: "Mark Payment as Paid",
-        icon: CreditCard,
-        disabled: isPaid,
-        onClick: () => onMarkPaid?.(item),
-      },
-      {
-        key: "cancel",
-        label: "Cancel Order",
-        icon: Ban,
-        tone: "danger",
-        disabled: cancelled,
-        onClick: () => onCancel?.(item),
-      },
-      { key: "refund", label: "Refund", icon: Undo2, onClick: () => onView?.(item) },
-      { key: "contact", label: "Contact Customer", icon: Phone, onClick: () => onView?.(item) },
-      { key: "activity", label: "View Activity", icon: History, onClick: () => onView?.(item) },
-    ];
-  };
-
   const handleNextAction = (item, action) => {
     if (action.type === "progress") {
       onProgressStatus?.(item, action.targetStatus);
@@ -212,7 +188,10 @@ const OrderTable = ({
         const paymentType = item?.payments?.[0]?.method || item?.paymentMethod;
         return (
           <div className="min-w-0">
-            <p className="font-semibold text-[12px] leading-4 !mb-0 text-[var(--mk-ink-900)] truncate max-w-[200px]" title={item?.orderNumber}>
+            <p
+              className="font-semibold text-[12px] leading-4 !mb-0 text-[var(--mk-ink-900)] truncate max-w-[200px]"
+              title={item?.orderNumber}
+            >
               {item?.orderNumber}
             </p>
             {paymentType && (
@@ -247,7 +226,8 @@ const OrderTable = ({
       key: "totalAmount",
       header: "Amount",
       width: "95px",
-      className: "text-[13px] leading-[18px] text-[var(--mk-ink-900)] font-medium tabular-nums",
+      className:
+        "text-[13px] leading-[18px] text-[var(--mk-ink-900)] font-medium tabular-nums",
       render: (item) => fmtMoney(item?.totalAmount),
     },
     {
@@ -262,7 +242,10 @@ const OrderTable = ({
       sortable: true,
       width: "160px",
       render: (item) => (
-        <OrderStatusDropdown order={item} onChange={(newStatus) => onProgressStatus?.(item, newStatus)} />
+        <OrderStatusDropdown
+          order={item}
+          onChange={(newStatus) => onProgressStatus?.(item, newStatus)}
+        />
       ),
     },
     {
@@ -270,7 +253,8 @@ const OrderTable = ({
       header: "Date",
       sortable: true,
       width: "140px",
-      className: "text-[12px] font-normal leading-[18px] text-[var(--mk-ink-500)]",
+      className:
+        "text-[12px] font-normal leading-[18px] text-[var(--mk-ink-500)]",
       render: (item) => formatDate(item?.createdAt),
     },
     {
@@ -307,7 +291,9 @@ const OrderTable = ({
               {tab.label}
               <span
                 className={`text-[11.5px] font-semibold leading-none ${
-                  activeTab === tab.key ? "text-[var(--mk-primary)]" : "text-[var(--mk-ink-400)]"
+                  activeTab === tab.key
+                    ? "text-[var(--mk-primary)]"
+                    : "text-[var(--mk-ink-400)]"
                 }`}
               >
                 {tabCounts[tab.key]}
@@ -320,7 +306,15 @@ const OrderTable = ({
       <div className="flex items-center gap-2.5 mt-[14px] px-[14px] pb-[14px] overflow-x-auto border-b border-[var(--mk-line)]">
         <div className={FILTER_SEARCH_WRAP_CLASS}>
           <div className={FILTER_SEARCH_ICON_WRAP_CLASS}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[var(--mk-ink-400)]">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="text-[var(--mk-ink-400)]"
+            >
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
@@ -362,7 +356,11 @@ const OrderTable = ({
           ))}
         </select>
 
-        <OrderDateFilter startDate={dateStart} endDate={dateEnd} onChange={handleDateChange} />
+        <OrderDateFilter
+          startDate={dateStart}
+          endDate={dateEnd}
+          onChange={handleDateChange}
+        />
       </div>
 
       <CommonTable
@@ -372,8 +370,7 @@ const OrderTable = ({
         sortDirection={sortDirection}
         onSort={handleSort}
         emptyMessage={`No ${title.toLowerCase()} found`}
-        minWidth="1210px"
-        actionsWidth="56px"
+        minWidth="1160px"
         headerBgClass="bg-[#FAFBFD]"
         headerTextClass="text-[10px] font-semibold text-[var(--mk-ink-400)] tracking-[0.5px] leading-[14px]"
         headerHeightClass="h-[38px]"
@@ -381,9 +378,10 @@ const OrderTable = ({
         rowMinH="min-h-9"
         onRowClick={onView}
         rowClassName={(item) =>
-          isConflictAction(getOrderNextAction(item)) ? "border-l-[3px] border-l-[var(--mk-dgr)]" : ""
+          isConflictAction(getOrderNextAction(item))
+            ? "border-l-[3px] border-l-[var(--mk-dgr)]"
+            : ""
         }
-        renderRowActions={(item) => <OrderActionMenu items={buildRowMenuItems(item)} />}
       />
 
       <Pagination

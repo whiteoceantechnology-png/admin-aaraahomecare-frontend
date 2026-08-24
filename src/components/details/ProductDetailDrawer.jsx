@@ -27,7 +27,6 @@ import {
   addProduct,
   updateProduct,
   deleteProduct,
-  addProductImage,
   deleteProductImage,
   saveProductSpecification,
   getProductDocuments,
@@ -65,6 +64,12 @@ const FORM_ID = "product-detail-drawer-form";
 const imageUrl = (path) =>
   `${import.meta.env.VITE_API_BASE_URL}/admin/images/${path}`;
 
+const normalizeProductImages = (value) => {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  if (typeof value === "string" && value) return [value];
+  return [];
+};
+
 // Fixed two-slot document set — the API's `documentType` field accepts "COA"
 // and "SDS" (confirmed against the real dev API); the second slot is
 // labeled "SDS / MSDS" in the UI since that's the paperwork admins actually
@@ -75,6 +80,8 @@ const DOCUMENT_TYPES = [
 ];
 
 const STOCK_UNIT_OPTIONS = ["KG", "G", "L", "ML", "UNIT"];
+const unitFamilyForStockUnit = (unit) =>
+  unit === "UNIT" ? "unit" : unit === "ML" || unit === "L" ? "ml" : "kg";
 
 const formatBytes = (bytes) => {
   const kb = bytes / 1024;
@@ -138,14 +145,15 @@ const ProductDetailDrawer = ({
   const isCreate = productId == null;
 
   const [saving, setSaving] = useState(false);
-  const [imagePath, setImagePath] = useState("");
+  const [imagePaths, setImagePaths] = useState([]);
   // Optimistic local preview — shown immediately after Apply, before the
   // upload round-trip resolves, so the box never sits empty waiting on the
-  // network. Swapped out for the real server URL (imagePath) once the
-  // upload confirms; revoked (not left dangling) whenever it's superseded.
+  // network. Swapped out for the real server URL once the upload confirms;
+  // revoked (not left dangling) whenever it's superseded.
   const [primaryPreviewUrl, setPrimaryPreviewUrl] = useState(null);
   const [primaryUploading, setPrimaryUploading] = useState(false);
   const [galleryPreviews, setGalleryPreviews] = useState([]); // [{ tempId, url }]
+  const [draggedImageIndex, setDraggedImageIndex] = useState(null);
   const galleryInputRef = useRef(null);
   const primaryImageInputRef = useRef(null);
   const [uploadingGallery, setUploadingGallery] = useState(false);
@@ -180,7 +188,11 @@ const ProductDetailDrawer = ({
   // Add Product only — variants staged here are plain local state, never
   // POSTed until the product itself exists (POST /admin/variants requires a
   // real productId). See ProductVariantEditor.jsx's own header comment.
-  const [stagedVariants, setStagedVariants] = useState([]);
+  const [stagedVariantsByUnit, setStagedVariantsByUnit] = useState({
+    kg: [],
+    ml: [],
+    unit: [],
+  });
 
   const {
     register,
@@ -195,6 +207,8 @@ const ProductDetailDrawer = ({
   const watchedName = watch("name");
   const watchedCategoryId = watch("categoryId");
   const watchedTaxPercent = watch("taxPercent");
+  const watchedStockUnit = watch("stockUnit") || "KG";
+  const selectedUnitFamily = unitFamilyForStockUnit(watchedStockUnit);
   const watchedCategoryName = allCategoryList.find(
     (c) => String(c.id) === String(watchedCategoryId),
   )?.name;
@@ -236,8 +250,8 @@ const ProductDetailDrawer = ({
         stockUnit: "KG",
         description: "",
       });
-      setImagePath("");
-      setStagedVariants([]);
+      setImagePaths([]);
+      setStagedVariantsByUnit({ kg: [], ml: [], unit: [] });
       setSpecGroups([]);
     } else {
       refetch();
@@ -261,7 +275,7 @@ const ProductDetailDrawer = ({
         stockUnit: product.stockUnit ?? product.stock_unit ?? "KG",
         description: product.description ?? "",
       });
-      setImagePath(product.productImage || "");
+      setImagePaths(normalizeProductImages(product.productImage));
       // Deep-copied into fresh local objects — these came straight off the
       // Redux store and must never be mutated in place by the row editors
       // below.
@@ -289,7 +303,6 @@ const ProductDetailDrawer = ({
   // tab to the wrong product's unit family before the real fetch resolves.
   const productDataReady = !isCreate && !!product && product.id === productId;
   const variants = (!isCreate && product?.variants) || [];
-  const images = (!isCreate && product?.images) || [];
   const flags = !isCreate && product ? productHealth(product) : [];
 
   /* ================= SPECIFICATION (inline, no modal) ================= */
@@ -368,10 +381,50 @@ const ProductDetailDrawer = ({
 
   /* ================= IMAGE (primary) ================= */
   const handlePrimaryImageChange = (e) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files || []);
     e.target.value = "";
+    if (isCreate) {
+      handleCreateImageUpload(files);
+      return;
+    }
+    const file = files[0];
     if (!file || !validateImageFile(file)) return;
     openEditorFor("primary", file);
+  };
+
+  const handleCreateImageUpload = async (files) => {
+    const validFiles = files.filter(validateImageFile);
+    if (validFiles.length === 0) return;
+
+    setPrimaryUploading(true);
+    const uploadedPaths = [];
+    for (const file of validFiles) {
+      const res = await dispatch(uploadImage(file));
+      if (uploadImage.fulfilled.match(res)) {
+        uploadedPaths.push(res.payload.path);
+      } else {
+        toast.error(res.payload || `Failed to upload ${file.name}`);
+      }
+    }
+    setImagePaths((prev) => [...prev, ...uploadedPaths]);
+    setPrimaryUploading(false);
+  };
+
+  const handleCreateImageDrop = (e) => {
+    e.preventDefault();
+    handleCreateImageUpload(Array.from(e.dataTransfer.files || []));
+  };
+
+  const moveImage = (fromIndex, toIndex) => {
+    setImagePaths((prev) => {
+      if (toIndex < 0 || toIndex >= prev.length || fromIndex === toIndex) {
+        return prev;
+      }
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
   };
 
   /* ================= IMAGES (gallery) ================= */
@@ -403,7 +456,7 @@ const ProductDetailDrawer = ({
       const res = await dispatch(uploadImage(finalFile));
       setPrimaryUploading(false);
       if (uploadImage.fulfilled.match(res)) {
-        setImagePath(res.payload.path);
+        setImagePaths((prev) => [res.payload.path, ...prev.slice(1)]);
         // The confirmed server path takes over rendering now — the local
         // blob URL is no longer needed, so free it instead of leaking it.
         setPrimaryPreviewUrl((prev) => {
@@ -428,13 +481,14 @@ const ProductDetailDrawer = ({
     setUploadingGallery(true);
     const uploadRes = await dispatch(uploadImage(finalFile));
     if (uploadImage.fulfilled.match(uploadRes)) {
+      const nextImagePaths = [...imagePaths, uploadRes.payload.path];
       const addRes = await dispatch(
-        addProductImage({
-          productId: product.id,
-          data: { imageUrl: uploadRes.payload.path, isPrimary: false },
+        updateProduct({
+          id: product.id,
+          data: { productImage: nextImagePaths },
         }),
       );
-      if (addProductImage.fulfilled.match(addRes)) {
+      if (updateProduct.fulfilled.match(addRes)) {
         toast.success("Image added");
         await refetch();
       } else {
@@ -558,7 +612,9 @@ const ProductDetailDrawer = ({
       taxPercent: Number(data.taxPercent),
       actualPrice: Number(data.actualPrice),
       discountPrice: Number(data.discountPrice),
-      productImage: imagePath,
+      productImage: imagePaths,
+      stock: Number(data.stock),
+      stockUnit: data.stockUnit || null,
     };
 
     setSaving(true);
@@ -610,6 +666,7 @@ const ProductDetailDrawer = ({
     // after. Reuses the exact same addVariant payload shape Edit Product's
     // ladder editor already sends (packSizeId: 1 included, same reason: no
     // real per-size pack lookup exists yet — see variantSizeSystems.js).
+    const stagedVariants = stagedVariantsByUnit[selectedUnitFamily] || [];
     if (isCreate && stagedVariants.length > 0) {
       const newProductId = res.payload.id;
       const variantResults = await Promise.all(
@@ -964,89 +1021,177 @@ const ProductDetailDrawer = ({
             {/* IMAGES */}
             <div className="mt-1 mb-[20px]">
               <h4 className="!text-[14px] !font-semibold !leading-[1.2] !m-0 text-[var(--mk-ink-900)] mb-2">
-                Images{" "}
-                <span className="text-[12px] font-normal text-[var(--mk-ink-400)]">
-                  variant-first, product fallback
-                </span>
+                Upload Images{" "}
               </h4>
               <div className="flex gap-2.5 flex-wrap">
                 <input
                   ref={primaryImageInputRef}
                   type="file"
                   accept="image/*"
+                  multiple={isCreate}
                   onChange={handlePrimaryImageChange}
                   className="hidden"
                 />
-                {/* primaryPreviewUrl (the just-applied local blob) always wins
-                    over imagePath (the confirmed server path) while a fresh
-                    pick is mid-upload, so the box never sits empty. */}
-                {(() => {
-                  const primarySrc =
-                    primaryPreviewUrl ||
-                    (imagePath ? imageUrl(imagePath) : null);
-                  return (
-                    <div className="relative group">
-                      <button
-                        type="button"
-                        onClick={() => primaryImageInputRef.current?.click()}
-                        aria-label={
-                          primarySrc
-                            ? "Replace primary image"
-                            : "Add primary image"
-                        }
-                        title={primarySrc ? "Click to replace" : "Add image"}
-                        className="w-16 h-16 rounded-lg border-[1.5px] border-dashed border-[var(--mk-line)] hover:border-[var(--mk-primary)]/40 flex items-center justify-center text-[var(--mk-ink-400)] text-center overflow-hidden cursor-pointer"
-                      >
-                        {primarySrc ? (
-                          <img
-                            src={primarySrc}
-                            alt="Primary"
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <span className="flex flex-col items-center gap-0.5">
-                            <Plus size={16} />
-                            <span className="text-[10px] font-medium">Add</span>
-                          </span>
-                        )}
-                      </button>
-                      {primaryUploading && (
-                        <span className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-lg text-white text-[10px] font-medium pointer-events-none">
-                          Uploading…
-                        </span>
-                      )}
-                      {primarySrc && !primaryUploading && (
+                {isCreate && (
+                  <button
+                    type="button"
+                    onClick={() => primaryImageInputRef.current?.click()}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={handleCreateImageDrop}
+                    disabled={primaryUploading || imageLoading}
+                    className="w-full min-h-24 rounded-lg border-[1.5px] border-dashed border-[var(--mk-line)] hover:border-[var(--mk-primary)]/40 flex flex-col items-center justify-center gap-1 text-[var(--mk-ink-500)] cursor-pointer disabled:opacity-60"
+                  >
+                    <Plus size={18} className="text-[var(--mk-primary)]" />
+                    <span className="text-[12px] font-semibold">
+                      Drop images here or Browse Files
+                    </span>
+                    <span className="text-[11px] text-[var(--mk-ink-400)]">
+                      Select multiple images at once
+                    </span>
+                  </button>
+                )}
+                {/* The just-applied local blob always wins over the confirmed
+                  server path while a fresh pick is mid-upload. */}
+                {!isCreate &&
+                  (() => {
+                    const primarySrc =
+                      primaryPreviewUrl ||
+                      (imagePaths[0] ? imageUrl(imagePaths[0]) : null);
+                    return (
+                      <div className="relative group">
                         <button
                           type="button"
-                          onClick={() => {
-                            setPrimaryPreviewUrl((prev) => {
-                              if (prev) URL.revokeObjectURL(prev);
-                              return null;
-                            });
-                            setImagePath("");
-                          }}
-                          aria-label="Remove primary image"
-                          className="absolute -top-1.5 -right-1.5 flex items-center justify-center w-5 h-5 rounded-full bg-white text-red-600 shadow-sm border border-gray-200 hover:bg-red-50 transition-colors cursor-pointer !opacity-0 group-hover:!opacity-100"
+                          onClick={() => primaryImageInputRef.current?.click()}
+                          aria-label={
+                            primarySrc
+                              ? "Replace primary image"
+                              : "Add primary image"
+                          }
+                          title={primarySrc ? "Click to replace" : "Add image"}
+                          className="w-16 h-16 rounded-lg border-[1.5px] border-dashed border-[var(--mk-line)] hover:border-[var(--mk-primary)]/40 flex items-center justify-center text-[var(--mk-ink-400)] text-center overflow-hidden cursor-pointer"
                         >
-                          <X size={11} />
+                          {primarySrc ? (
+                            <img
+                              src={primarySrc}
+                              alt="Primary"
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <span className="flex flex-col items-center gap-0.5">
+                              <Plus size={16} />
+                              <span className="text-[10px] font-medium">
+                                Add
+                              </span>
+                            </span>
+                          )}
                         </button>
+                        {primaryUploading && (
+                          <span className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-lg text-white text-[10px] font-medium pointer-events-none">
+                            Uploading…
+                          </span>
+                        )}
+                        {primarySrc && !primaryUploading && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPrimaryPreviewUrl((prev) => {
+                                if (prev) URL.revokeObjectURL(prev);
+                                return null;
+                              });
+                              setImagePaths((prev) => prev.slice(1));
+                            }}
+                            aria-label="Remove primary image"
+                            className="absolute -top-1.5 -right-1.5 flex items-center justify-center w-5 h-5 rounded-full bg-white text-red-600 shadow-sm border border-gray-200 hover:bg-red-50 transition-colors cursor-pointer !opacity-0 group-hover:!opacity-100"
+                          >
+                            <X size={11} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                {isCreate &&
+                  imagePaths.map((path, index) => (
+                    <div
+                      key={`${path}-${index}`}
+                      draggable
+                      onDragStart={() => setDraggedImageIndex(index)}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (draggedImageIndex != null) {
+                          moveImage(draggedImageIndex, index);
+                        }
+                        setDraggedImageIndex(null);
+                      }}
+                      onDragEnd={() => setDraggedImageIndex(null)}
+                      className="relative group cursor-grab active:cursor-grabbing"
+                    >
+                      <img
+                        src={imageUrl(path)}
+                        alt={
+                          index === 0
+                            ? "Primary product"
+                            : `Product ${index + 1}`
+                        }
+                        className="w-20 h-20 rounded-lg object-cover border border-[var(--mk-line)]"
+                      />
+                      {index === 0 && (
+                        <span className="absolute left-1 bottom-1 rounded bg-black/65 px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                          Primary
+                        </span>
                       )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setImagePaths((prev) =>
+                            prev.filter((_, i) => i !== index),
+                          )
+                        }
+                        aria-label="Remove image"
+                        className="absolute -top-1.5 -right-1.5 flex items-center justify-center w-5 h-5 rounded-full bg-white text-red-600 shadow-sm border border-gray-200 hover:bg-red-50 transition-colors cursor-pointer !opacity-0 group-hover:!opacity-100"
+                      >
+                        <X size={11} />
+                      </button>
+                      <div className="absolute inset-x-0 -bottom-6 hidden justify-center gap-1 group-hover:flex">
+                        <button
+                          type="button"
+                          onClick={() => moveImage(index, index - 1)}
+                          disabled={index === 0}
+                          aria-label="Move image left"
+                          className="rounded border border-[var(--mk-line)] bg-white px-1.5 text-[11px] disabled:opacity-30"
+                        >
+                          ←
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveImage(index, index + 1)}
+                          disabled={index === imagePaths.length - 1}
+                          aria-label="Move image right"
+                          className="rounded border border-[var(--mk-line)] bg-white px-1.5 text-[11px] disabled:opacity-30"
+                        >
+                          →
+                        </button>
+                      </div>
                     </div>
-                  );
-                })()}
+                  ))}
 
                 {!isCreate &&
-                  images.map((img) => (
-                    <div key={img.id} className="relative group">
+                  imagePaths.slice(1).map((path, index) => (
+                    <div key={`${path}-${index}`} className="relative group">
                       <img
-                        src={imageUrl(img.path)}
-                        alt="Product"
+                        src={imageUrl(path)}
+                        alt={`Product ${index + 2}`}
                         className="w-16 h-16 rounded-lg object-cover border border-[var(--mk-line)]"
                       />
                       <button
                         type="button"
-                        onClick={() => setDeleteImageTarget(img)}
-                        aria-label="Delete image"
+                        onClick={() =>
+                          setImagePaths((prev) =>
+                            prev.filter((currentPath) => currentPath !== path),
+                          )
+                        }
+                        aria-label="Remove image"
                         className="absolute -top-1.5 -right-1.5 flex items-center justify-center w-5 h-5 rounded-full bg-white text-red-600 shadow-sm border border-gray-200 hover:bg-red-50 transition-colors cursor-pointer !opacity-0 group-hover:!opacity-100"
                       >
                         <X size={11} />
@@ -1103,11 +1248,18 @@ const ProductDetailDrawer = ({
             {/* VARIANTS */}
             {isCreate ? (
               <ProductVariantEditor
+                key={selectedUnitFamily}
                 categoryName={watchedCategoryName}
                 productName={watchedName}
                 taxPercent={watchedTaxPercent}
-                variants={stagedVariants}
-                onChange={setStagedVariants}
+                unitFamily={selectedUnitFamily}
+                variantsByUnit={stagedVariantsByUnit}
+                onChange={(unitFamily, nextVariants) =>
+                  setStagedVariantsByUnit((prev) => ({
+                    ...prev,
+                    [unitFamily]: nextVariants,
+                  }))
+                }
               />
             ) : (
               <div className="mb-[20px]">
@@ -1166,12 +1318,12 @@ const ProductDetailDrawer = ({
                           <th className="text-left font-semibold px-2.5 py-2 whitespace-nowrap">
                             SKU
                           </th>
-                          <th className="text-right font-semibold px-2.5 py-2 whitespace-nowrap">
-                            List ₹ (ex-GST)
+                          <th className="text-left font-semibold px-2.5 py-2 whitespace-nowrap">
+                            Price
                           </th>
-                          <th className="text-right font-semibold px-2.5 py-2 whitespace-nowrap">
+                          {/* <th className="text-right font-semibold px-2.5 py-2 whitespace-nowrap">
                             Incl. GST {product?.taxPercent ?? 0}%
-                          </th>
+                          </th> */}
                           {!viewOnly && <th className="px-2 py-2" />}
                         </tr>
                       </thead>
@@ -1189,7 +1341,7 @@ const ProductDetailDrawer = ({
                                   ? v.discountPrice
                                   : "",
                             }}
-                            taxPercent={product?.taxPercent}
+                            // taxPercent={product?.taxPercent}
                             onRemove={
                               viewOnly
                                 ? undefined

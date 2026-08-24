@@ -36,14 +36,14 @@ export const SIZE_SYSTEMS = {
     key: "BULK_KG",
     label: "Bulk · 1 / 5 / 10 kg",
     units: ["kg"],
-    steps: [[1, "kg"], [5, "kg"], [10, "kg"]],
+    steps: [, [25, "g"], [50, "g"], [100, "g"], [250, "g"], [500, "g"],[1, "kg"], [5, "kg"], [10, "kg"]],
   },
   VOLUME: {
     key: "VOLUME",
     label: "Volume · 25 ml – 1 L",
     units: ["ml", "L"],
     steps: [
-      [25, "ml"], [50, "ml"], [100, "ml"], [250, "ml"], [500, "ml"], [1, "L"],
+       [100, "ml"], [250, "ml"], [500, "ml"], [1, "L"],
     ],
   },
   PACK: {

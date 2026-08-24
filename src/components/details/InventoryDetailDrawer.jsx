@@ -5,13 +5,12 @@
 // for the movement log, and PUT/POST .../stock, .../adjust, .../reserve,
 // .../release for the write actions. No product-derived fallback data —
 // if the backend doesn't send a field, this shows "—", never a guess.
-import { useEffect, useState } from "react";
+import { createElement, useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { toast } from "react-hot-toast";
 import {
   AlertTriangle,
   Boxes,
-  ArrowUpRight,
   History,
   PackagePlus,
   PackageCheck,
@@ -20,14 +19,8 @@ import {
   Unlock,
 } from "lucide-react";
 
-import {
-  getInventoryDetail,
-  getInventoryHistory,
-  updateStock,
-  adjustStock,
-  reserveStock,
-  releaseStock,
-} from "../../redux/slices/inventorySlice";
+import { getInventoryHistory } from "../../redux/slices/inventorySlice";
+import { getProductById, updateProduct } from "../../redux/slices/productSlice";
 import Drawer from "../common/Drawer";
 import Modal from "../common/Modal";
 import EmptyState from "../common/EmptyState";
@@ -42,14 +35,17 @@ const fldClass =
 // Text sizes throughout this file stay on the already-established Product
 // Detail scale (12/13/14/18/20px) — nothing new introduced here, only the
 // layout/spacing/card structure changed in this pass.
-const sectionHeadingClass = "text-[18px] font-semibold text-[var(--mk-ink-900)]";
+const sectionHeadingClass =
+  "text-[18px] font-semibold text-[var(--mk-ink-900)]";
 
 // Compact SKU/Price/Status column for the product summary card — 12px
 // label over a 14px value.
 const InfoCell = ({ label, value }) => (
   <div className="min-w-0">
     <p className="text-[12px] text-[var(--mk-ink-500)]">{label}</p>
-    <div className="text-[14px] font-medium text-[var(--mk-ink-900)] mt-0.5 truncate">{value ?? "—"}</div>
+    <div className="text-[14px] font-medium text-[var(--mk-ink-900)] mt-0.5 truncate">
+      {value ?? "—"}
+    </div>
   </div>
 );
 
@@ -58,14 +54,16 @@ const STAT_TONE = {
   warn: { bg: "bg-[var(--mk-warn-bg)]", fg: "text-[var(--mk-warn)]" },
 };
 
-const StatCard = ({ icon: Icon, label, value, tone = "ok" }) => (
+const StatCard = ({ icon, label, value, tone = "ok" }) => (
   <div className="rounded-xl border border-[var(--mk-line)] px-3.5 py-3">
     <div className="flex items-center justify-between gap-2">
       <p className="text-[12px] uppercase tracking-wide text-[var(--mk-ink-400)] font-semibold truncate">
         {label}
       </p>
-      <span className={`flex items-center justify-center w-6 h-6 rounded-md shrink-0 ${STAT_TONE[tone].bg} ${STAT_TONE[tone].fg}`}>
-        <Icon size={13} />
+      <span
+        className={`flex items-center justify-center w-6 h-6 rounded-md shrink-0 ${STAT_TONE[tone].bg} ${STAT_TONE[tone].fg}`}
+      >
+        {createElement(icon, { size: 13 })}
       </span>
     </div>
     <p
@@ -76,68 +74,69 @@ const StatCard = ({ icon: Icon, label, value, tone = "ok" }) => (
   </div>
 );
 
-const ActionButton = ({ icon: Icon, label, onClick, disabled }) => (
+const ActionButton = ({ icon, label, onClick, disabled }) => (
   <button
     type="button"
     onClick={onClick}
     disabled={disabled}
     className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-[13px] font-semibold text-[var(--mk-ink-700)] border border-[var(--mk-line)] bg-white hover:border-[#C9CFDA] hover:text-[var(--mk-ink-900)] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
   >
-    <Icon size={13} />
+    {createElement(icon, { size: 13 })}
     {label}
   </button>
 );
 
-// variantId = the inventory record's id (same id used across
-// /admin/inventory/{id} detail, stock, adjust, reserve, release, history).
-const InventoryDetailDrawer = ({
-  variantId,
-  open,
-  onClose,
-  onViewProduct,
-  onMutated,
-}) => {
+const InventoryDetailDrawer = ({ productId, open, onClose, onMutated }) => {
   const dispatch = useDispatch();
-  const {
-    selected: item,
-    selectedLoading,
-    selectedError,
-    history,
-    saving,
-  } = useSelector((state) => state.inventory || {});
+  const { singleProduct: product, loading: productLoading } = useSelector(
+    (state) => state.product || {},
+  );
+  const item = useMemo(
+    () =>
+      product && {
+        ...product,
+        productName: product.name,
+        variantName: "Product stock",
+        stockQuantity: product.stock,
+        availableQuantity: product.stock,
+      },
+    [product],
+  );
+  const history = { loading: false, error: null, items: [], meta: {} };
 
   const [activeAction, setActiveAction] = useState(null); // "update" | "adjust" | "reserve" | "release" | null
   const [stockValue, setStockValue] = useState("");
-  const [adjustChange, setAdjustChange] = useState("");
-  const [adjustReason, setAdjustReason] = useState("damaged");
-  const [adjustNotes, setAdjustNotes] = useState("");
-  const [refQty, setRefQty] = useState("");
-  const [refType, setRefType] = useState("order");
-  const [refId, setRefId] = useState("");
-  const [historyPage, setHistoryPage] = useState(1);
+  const historyPage = 1;
+  const saving = productLoading;
+  const adjustChange = "";
+  const adjustReason = "correction";
+  const adjustNotes = "";
+  const refQty = "";
+  const refType = "order";
+  const refId = "";
+  const setAdjustChange = () => {};
+  const setAdjustReason = () => {};
+  const setAdjustNotes = () => {};
+  const setRefQty = () => {};
+  const setRefType = () => {};
+  const setRefId = () => {};
+  const setHistoryPage = () => {};
+  const handleAdjust = () => {};
+  const handleReserve = () => {};
+  const handleRelease = () => {};
 
   useEffect(() => {
-    if (open && variantId) {
-      dispatch(getInventoryDetail(variantId));
-      setHistoryPage(1);
-      dispatch(
-        getInventoryHistory({ id: variantId, params: { page: 1, limit: 20 } }),
-      );
+    if (open && productId) {
+      dispatch(getProductById(productId));
     }
-  }, [open, variantId, dispatch]);
+  }, [open, productId, dispatch]);
 
   useEffect(() => {
     if (item) setStockValue(item.stockQuantity ?? 0);
   }, [item]);
 
   const refreshAfterMutation = () => {
-    dispatch(getInventoryDetail(variantId));
-    dispatch(
-      getInventoryHistory({
-        id: variantId,
-        params: { page: historyPage, limit: 20 },
-      }),
-    );
+    dispatch(getProductById(productId));
     onMutated?.();
   };
 
@@ -160,16 +159,17 @@ const InventoryDetailDrawer = ({
   const priceStrike =
     hasValue(item?.discountPrice) &&
     Number(item?.price) > Number(item?.discountPrice);
-  const productId = item?.productId ?? item?.product?.id;
-
   const closeAction = () => setActiveAction(null);
 
   const handleUpdateStock = async (e) => {
     e.preventDefault();
     const res = await dispatch(
-      updateStock({ id: variantId, stockQuantity: Number(stockValue) || 0 }),
+      updateProduct({
+        id: productId,
+        data: { stock: Number(stockValue) || 0 },
+      }),
     );
-    if (updateStock.fulfilled.match(res)) {
+    if (updateProduct.fulfilled.match(res)) {
       toast.success("Stock updated");
       closeAction();
       refreshAfterMutation();
@@ -177,63 +177,6 @@ const InventoryDetailDrawer = ({
       toast.error(res.payload || "Failed to update stock");
     }
   };
-
-  const handleAdjust = async (e) => {
-    e.preventDefault();
-    if (!adjustChange || Number(adjustChange) === 0) {
-      toast.error("Enter a non-zero quantity change");
-      return;
-    }
-    const res = await dispatch(
-      adjustStock({
-        id: variantId,
-        data: {
-          quantityChange: Number(adjustChange),
-          reason: adjustReason,
-          notes: adjustNotes,
-        },
-      }),
-    );
-    if (adjustStock.fulfilled.match(res)) {
-      toast.success("Stock adjusted");
-      setAdjustChange("");
-      setAdjustNotes("");
-      closeAction();
-      refreshAfterMutation();
-    } else {
-      toast.error(res.payload || "Failed to adjust stock");
-    }
-  };
-
-  const submitReserveOrRelease = (thunk, successMessage) => async (e) => {
-    e.preventDefault();
-    if (!(Number(refQty) > 0)) {
-      toast.error("Enter a quantity greater than 0");
-      return;
-    }
-    const res = await dispatch(
-      thunk({
-        id: variantId,
-        data: {
-          quantity: Number(refQty),
-          referenceType: refType,
-          referenceId: refId ? Number(refId) : undefined,
-        },
-      }),
-    );
-    if (thunk.fulfilled.match(res)) {
-      toast.success(successMessage);
-      setRefQty("");
-      setRefId("");
-      closeAction();
-      refreshAfterMutation();
-    } else {
-      toast.error(res.payload || "Failed to save");
-    }
-  };
-
-  const handleReserve = submitReserveOrRelease(reserveStock, "Stock reserved");
-  const handleRelease = submitReserveOrRelease(releaseStock, "Stock released");
 
   return (
     <Drawer
@@ -251,23 +194,12 @@ const InventoryDetailDrawer = ({
       titleSizePx={20}
       bodyPaddingXPx={18}
     >
-      {selectedLoading && !item ? (
+      {productLoading && !item ? (
         <div className="py-16 text-center text-sm text-[var(--mk-ink-400)]">
           Loading stock details…
         </div>
-      ) : selectedError ? (
-        <div className="py-16 text-center">
-          <p className="text-sm text-[var(--mk-dgr)] mb-2">{selectedError}</p>
-          <button
-            type="button"
-            onClick={() => dispatch(getInventoryDetail(variantId))}
-            className="text-[13px] font-semibold text-[var(--mk-primary)] hover:underline cursor-pointer"
-          >
-            Try again
-          </button>
-        </div>
       ) : !item ? (
-        <EmptyState title="No variant selected" />
+        <EmptyState title="No product selected" />
       ) : (
         <div>
           {/* PRODUCT SUMMARY — icon + name/variant, a hairline divider, then
@@ -312,24 +244,21 @@ const InventoryDetailDrawer = ({
                 label="Status"
                 value={
                   <MkPill
-                    label={item.status === true || item.status === "active" ? "Active" : "Inactive"}
-                    tone={item.status === true || item.status === "active" ? "ok" : "mut"}
+                    label={
+                      item.status === true || item.status === "active"
+                        ? "Active"
+                        : "Inactive"
+                    }
+                    tone={
+                      item.status === true || item.status === "active"
+                        ? "ok"
+                        : "mut"
+                    }
                     size="sm"
                   />
                 }
               />
             </div>
-
-            {productId != null && (
-              <button
-                type="button"
-                onClick={() => onViewProduct?.(productId)}
-                className="mt-3 inline-flex items-center gap-1.5 text-[14px] font-medium text-[var(--mk-primary)] hover:underline cursor-pointer"
-              >
-                View product
-                <ArrowUpRight size={14} />
-              </button>
-            )}
           </div>
 
           {/* STOCK DETAILS + ACTIONS */}
@@ -342,24 +271,11 @@ const InventoryDetailDrawer = ({
                   label="Update stock"
                   onClick={() => setActiveAction("update")}
                 />
-                <ActionButton
-                  icon={SlidersHorizontal}
-                  label="Adjust"
-                  onClick={() => setActiveAction("adjust")}
-                />
-                <ActionButton
-                  icon={Lock}
-                  label="Reserve"
-                  onClick={() => setActiveAction("reserve")}
-                />
-                <ActionButton
-                  icon={Unlock}
-                  label="Release"
-                  onClick={() => setActiveAction("release")}
-                />
               </div>
             </div>
-            <div className={`grid grid-cols-3 gap-2.5 ${isLow ? "mb-2.5" : ""}`}>
+            <div
+              className={`grid grid-cols-3 gap-2.5 ${isLow ? "mb-2.5" : ""}`}
+            >
               <StatCard icon={Boxes} label="On hand" value={onHand} />
               <StatCard icon={Lock} label="Reserved" value={reserved} />
               <StatCard
@@ -456,7 +372,7 @@ const InventoryDetailDrawer = ({
                     setHistoryPage(p);
                     dispatch(
                       getInventoryHistory({
-                        id: variantId,
+                        id: productId,
                         params: { page: p, limit: 20 },
                       }),
                     );
@@ -476,7 +392,7 @@ const InventoryDetailDrawer = ({
                     setHistoryPage(p);
                     dispatch(
                       getInventoryHistory({
-                        id: variantId,
+                        id: productId,
                         params: { page: p, limit: 20 },
                       }),
                     );
@@ -506,9 +422,17 @@ const InventoryDetailDrawer = ({
             <input
               type="number"
               min="0"
+              step="1"
+              inputMode="numeric"
               autoFocus
               value={stockValue}
-              onChange={(e) => setStockValue(e.target.value)}
+              onChange={(e) => {
+                const nextValue = e.target.value;
+                if (/^\d*$/.test(nextValue)) setStockValue(nextValue);
+              }}
+              onKeyDown={(e) => {
+                if (["-", "+", "e", "E"].includes(e.key)) e.preventDefault();
+              }}
               className={fldClass}
             />
           </div>

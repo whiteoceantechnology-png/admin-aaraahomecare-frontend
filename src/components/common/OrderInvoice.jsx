@@ -1,7 +1,7 @@
 // A4 tax-invoice template — structure, spacing and typography follow the
 // approved reference PDF (a real tax invoice) exactly: bordered page frame,
 // left company block + right "TAX INVOICE" heading, a labelled invoice-info
-// row, Bill To / Ship To panel, an itemised table with a CGST/SGST split,
+// row, Bill To / Ship To panel, an itemised table with a combined GST column,
 // a totals block with Payment Made / Balance Due, Total in Words, Notes,
 // and Terms & Conditions forced onto their own page. Every VALUE comes from
 // the real order object already loaded by the caller (GET
@@ -16,16 +16,16 @@
 //      generic, non-company-specific clauses in the same numbered
 //      structure — reusing another business's exact legal wording under
 //      Aaraa's name would misrepresent whose terms they are.
-// CGST/SGST is an even split of the order's real tax amount (standard
-// intra-state GST presentation) — this app has no per-line CGST/SGST
-// fields, and no seller/buyer state comparison to confirm intra-state, so
-// this is a disclosed assumption, not confirmed against the backend.
+// GST is rendered as one combined value from the order's real tax amount.
 import moment from "moment";
 import logo from "../layout/aaraa_logo.png";
 import { numberToWordsINR } from "../../utils/numberToWords";
 
 const fmtNum = (n) =>
-  Number(n ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  Number(n ?? 0).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 const fmtRs = (n) => `Rs.${fmtNum(n)}`;
 const fmtDate = (v) => (v ? moment(v).format("DD/MM/YYYY") : "—");
 
@@ -44,7 +44,9 @@ const MetaRow = ({ label, value, bold }) => (
   <div className="flex text-[11px] leading-[1.5]">
     <span className="w-[110px] shrink-0 text-gray-700">{label}</span>
     <span className={`shrink-0 mr-1 text-gray-700`}>:</span>
-    <span className={bold ? "font-semibold text-gray-900" : "text-gray-900"}>{value || "—"}</span>
+    <span className={bold ? "font-semibold text-gray-900" : "text-gray-900"}>
+      {value || "—"}
+    </span>
   </div>
 );
 
@@ -72,19 +74,27 @@ const OrderInvoice = ({ order, id }) => {
   const address = order.addressSnapshot;
   const payments = Array.isArray(order.payments) ? order.payments : [];
   const paymentMethod = payments[0]?.method || order.paymentMethod;
-  const isPaid = PAID_FAMILY.includes((order.paymentStatus || "").toLowerCase());
+  const isPaid = PAID_FAMILY.includes(
+    (order.paymentStatus || "").toLowerCase(),
+  );
 
   // Same real-payment-first, paid-status-fallback logic already used in
   // OrderDetailDrawer.jsx's Payment history section — not reinvented here.
-  const paidFromRecords = payments.reduce((sum, p) => sum + Number(p?.amount || 0), 0);
-  const paidAmount = paidFromRecords > 0 ? paidFromRecords : isPaid ? Number(order.totalAmount || 0) : 0;
+  const paidFromRecords = payments.reduce(
+    (sum, p) => sum + Number(p?.amount || 0),
+    0,
+  );
+  const paidAmount =
+    paidFromRecords > 0
+      ? paidFromRecords
+      : isPaid
+        ? Number(order.totalAmount || 0)
+        : 0;
   const balanceDue = Math.max(0, Number(order.totalAmount || 0) - paidAmount);
 
   const taxAmount = Number(order.taxAmount || 0);
-  const gstPercent = subtotal > 0 && taxAmount > 0 ? (taxAmount / subtotal) * 100 : 0;
-  const halfGstPercent = gstPercent / 2;
-  const cgstTotal = taxAmount / 2;
-  const sgstTotal = taxAmount / 2;
+  const gstPercent =
+    subtotal > 0 && taxAmount > 0 ? (taxAmount / subtotal) * 100 : 0;
 
   const addressLines = address
     ? [
@@ -103,31 +113,57 @@ const OrderInvoice = ({ order, id }) => {
           {/* HEADER */}
           <div className="flex items-start justify-between px-6 pt-6 pb-3">
             <div className="flex items-start gap-2.5">
-              <img src={logo} alt="Aaraa Homecare" className="h-10 w-auto object-contain shrink-0" />
+              <img
+                src={logo}
+                alt="Aaraa Homecare"
+                className="h-10 w-auto object-contain shrink-0"
+              />
               <div>
-                <p className="text-[14px] font-bold text-gray-900 leading-tight">Aaraa Homecare</p>
-                <p className="text-[10px] text-gray-500 mt-0.5">Ingredients &amp; formulation supplies</p>
+                <p className="text-[14px] font-bold text-gray-900 leading-tight">
+                  Aaraa Homecare
+                </p>
+                <p className="text-[10px] text-gray-500 mt-0.5">
+                  Ingredients &amp; formulation supplies
+                </p>
               </div>
             </div>
-            <p className="text-[26px] font-bold text-gray-900 tracking-tight leading-none">TAX INVOICE</p>
+            <p className="text-[26px] font-bold text-gray-900 tracking-tight leading-none">
+              TAX INVOICE
+            </p>
           </div>
 
           {/* INVOICE META */}
           <div className="flex items-start justify-between px-6 py-3 border-t border-gray-300">
             <div className="space-y-0.5">
               <MetaRow label="Invoice No." value={order.orderNumber} bold />
-              <MetaRow label="Invoice Date" value={fmtDate(order.createdAt)} bold />
-              <MetaRow label="Payment Method" value={paymentMethod ? formatLabel(paymentMethod) : "—"} bold />
-              <MetaRow label="Payment Status" value={formatLabel(order.paymentStatus)} bold />
+              <MetaRow
+                label="Invoice Date"
+                value={fmtDate(order.createdAt)}
+                bold
+              />
+              <MetaRow
+                label="Payment Method"
+                value={paymentMethod ? formatLabel(paymentMethod) : "—"}
+                bold
+              />
+              <MetaRow
+                label="Payment Status"
+                value={formatLabel(order.paymentStatus)}
+                bold
+              />
             </div>
             <div className="space-y-0.5 text-right">
               <div className="flex justify-end text-[11px]">
                 <span className="text-gray-700 mr-1">Place Of Supply :</span>
-                <span className="font-semibold text-gray-900">{address?.state || "—"}</span>
+                <span className="font-semibold text-gray-900">
+                  {address?.state || "—"}
+                </span>
               </div>
               <div className="flex justify-end text-[11px]">
                 <span className="text-gray-700 mr-1">Order Status :</span>
-                <span className="font-semibold text-gray-900">{formatLabel(order.status)}</span>
+                <span className="font-semibold text-gray-900">
+                  {formatLabel(order.status)}
+                </span>
               </div>
             </div>
           </div>
@@ -136,35 +172,58 @@ const OrderInvoice = ({ order, id }) => {
               honestly for both rather than inventing a second one. */}
           <div className="grid grid-cols-2 border-t border-gray-300">
             <div className="px-6 py-2 border-r border-gray-300 bg-gray-50">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Bill To</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                Bill To
+              </p>
             </div>
             <div className="px-6 py-2 bg-gray-50">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Ship To</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                Ship To
+              </p>
             </div>
           </div>
           <div className="grid grid-cols-2 border-t border-gray-300 pb-4">
             <div className="px-6 pt-2.5 pr-4 border-r border-gray-300">
-              <p className="text-[12px] font-bold text-gray-900">{order.customer?.name || address?.name || "—"}</p>
+              <p className="text-[12px] font-bold text-gray-900">
+                {order.customer?.name || address?.name || "—"}
+              </p>
               {addressLines.map((line, i) => (
                 <p key={i} className="text-[11px] text-gray-700 leading-[1.5]">
                   {line}
                 </p>
               ))}
-              {order.customer?.phone && <p className="text-[11px] text-gray-700 leading-[1.5]">{order.customer.phone}</p>}
-              {order.customer?.email && <p className="text-[11px] text-gray-700 leading-[1.5]">{order.customer.email}</p>}
+              {order.customer?.phone && (
+                <p className="text-[11px] text-gray-700 leading-[1.5]">
+                  {order.customer.phone}
+                </p>
+              )}
+              {order.customer?.email && (
+                <p className="text-[11px] text-gray-700 leading-[1.5]">
+                  {order.customer.email}
+                </p>
+              )}
             </div>
             <div className="px-6 pt-2.5 pl-4">
-              <p className="text-[12px] font-bold text-gray-900">{order.customer?.name || address?.name || "—"}</p>
+              <p className="text-[12px] font-bold text-gray-900">
+                {order.customer?.name || address?.name || "—"}
+              </p>
               {addressLines.length > 0 ? (
                 addressLines.map((line, i) => (
-                  <p key={i} className="text-[11px] text-gray-700 leading-[1.5]">
+                  <p
+                    key={i}
+                    className="text-[11px] text-gray-700 leading-[1.5]"
+                  >
                     {line}
                   </p>
                 ))
               ) : (
                 <p className="text-[11px] text-gray-400">No address on file</p>
               )}
-              {order.customer?.phone && <p className="text-[11px] text-gray-700 leading-[1.5]">{order.customer.phone}</p>}
+              {order.customer?.phone && (
+                <p className="text-[11px] text-gray-700 leading-[1.5]">
+                  {order.customer.phone}
+                </p>
+              )}
             </div>
           </div>
 
@@ -172,65 +231,89 @@ const OrderInvoice = ({ order, id }) => {
           <table className="invoice-items-table w-full text-[10.5px] border-t-2 border-gray-900">
             <thead>
               <tr className="border-b border-gray-400">
-                <th rowSpan={2} className="align-bottom px-2 py-1.5 text-left font-semibold w-[28px]">
+                <th
+                  rowSpan={2}
+                  className="align-bottom px-2 py-1.5 text-left font-semibold w-[28px]"
+                >
                   #
                 </th>
-                <th rowSpan={2} className="align-bottom px-2 py-1.5 text-left font-semibold">
+                <th
+                  rowSpan={2}
+                  className="align-bottom px-2 py-1.5 text-left font-semibold"
+                >
                   Item &amp; Description
                 </th>
-                <th rowSpan={2} className="align-bottom px-2 py-1.5 text-right font-semibold w-[48px]">
+                <th
+                  rowSpan={2}
+                  className="align-bottom px-2 py-1.5 text-right font-semibold w-[48px]"
+                >
                   Qty
                 </th>
-                <th rowSpan={2} className="align-bottom px-2 py-1.5 text-right font-semibold w-[72px]">
+                <th
+                  rowSpan={2}
+                  className="align-bottom px-2 py-1.5 text-right font-semibold w-[72px]"
+                >
                   Rate
                 </th>
-                <th colSpan={2} className="px-2 py-1 text-center font-semibold border-l border-gray-300">
-                  CGST
+                <th
+                  rowSpan={2}
+                  className="align-bottom px-2 py-1.5 text-right font-semibold w-[76px] border-l border-gray-300"
+                >
+                  GST
                 </th>
-                <th colSpan={2} className="px-2 py-1 text-center font-semibold border-l border-gray-300">
-                  SGST
-                </th>
-                <th rowSpan={2} className="align-bottom px-2 py-1.5 text-right font-semibold w-[76px] border-l border-gray-300">
+                <th
+                  rowSpan={2}
+                  className="align-bottom px-2 py-1.5 text-right font-semibold w-[76px] border-l border-gray-300"
+                >
                   Amount
                 </th>
               </tr>
-              <tr className="border-b-2 border-gray-900">
-                <th className="px-2 pb-1.5 text-right font-semibold w-[42px] border-l border-gray-300">%</th>
-                <th className="px-2 pb-1.5 text-right font-semibold w-[56px]">Amt</th>
-                <th className="px-2 pb-1.5 text-right font-semibold w-[42px] border-l border-gray-300">%</th>
-                <th className="px-2 pb-1.5 text-right font-semibold w-[56px]">Amt</th>
-              </tr>
+              <tr className="border-b-2 border-gray-900"></tr>
             </thead>
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-6 text-center text-gray-400">
+                  <td colSpan={6} className="py-6 text-center text-gray-400">
                     No items on this order
                   </td>
                 </tr>
               ) : (
                 items.map((it, i) => {
-                  const lineAmount = it.subtotal != null ? Number(it.subtotal) : Number(it.price || 0) * Number(it.quantity || 1);
-                  const lineCgst = (lineAmount * halfGstPercent) / 100;
-                  const lineSgst = lineCgst;
+                  const lineAmount =
+                    it.subtotal != null
+                      ? Number(it.subtotal)
+                      : Number(it.price || 0) * Number(it.quantity || 1);
+                  const lineGst = (lineAmount * gstPercent) / 100;
                   const hsn = it.hsnCode || it.hsn || it.variant?.hsnCode;
                   return (
-                    <tr key={it.id ?? i} className="invoice-row border-b border-gray-200 align-top">
+                    <tr
+                      key={it.id ?? i}
+                      className="invoice-row border-b border-gray-200 align-top"
+                    >
                       <td className="px-2 py-2 text-gray-600">{i + 1}</td>
                       <td className="px-2 py-2 text-gray-900">
                         <div>
                           {it.productName}
                           {it.sizeLabel ? ` / ${it.sizeLabel}` : ""}
                         </div>
-                        {hsn && <div className="text-[9.5px] text-gray-400 mt-1">HSN: {hsn}</div>}
+                        {hsn && (
+                          <div className="text-[9.5px] text-gray-400 mt-1">
+                            HSN: {hsn}
+                          </div>
+                        )}
                       </td>
-                      <td className="px-2 py-2 text-right tabular-nums">{fmtNum(it.quantity).replace(".00", "")}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{fmtNum(it.price)}</td>
-                      <td className="px-2 py-2 text-right tabular-nums border-l border-gray-200">{halfGstPercent.toFixed(1)}%</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{fmtNum(lineCgst)}</td>
-                      <td className="px-2 py-2 text-right tabular-nums border-l border-gray-200">{halfGstPercent.toFixed(1)}%</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{fmtNum(lineSgst)}</td>
-                      <td className="px-2 py-2 text-right tabular-nums font-semibold border-l border-gray-200">{fmtNum(lineAmount)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">
+                        {fmtNum(it.quantity).replace(".00", "")}
+                      </td>
+                      <td className="px-2 py-2 text-right tabular-nums">
+                        {fmtNum(it.price)}
+                      </td>
+                      <td className="px-2 py-2 text-right tabular-nums border-l border-gray-200">
+                        {fmtNum(lineGst)}
+                      </td>
+                      <td className="px-2 py-2 text-right tabular-nums font-semibold border-l border-gray-200">
+                        {fmtNum(lineAmount)}
+                      </td>
                     </tr>
                   );
                 })
@@ -241,14 +324,20 @@ const OrderInvoice = ({ order, id }) => {
           {/* WORDS + NOTES  /  TOTALS */}
           <div className="flex items-start justify-between px-6 pt-4 pb-6 gap-6">
             <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Total In Words</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                Total In Words
+              </p>
               <p className="text-[11.5px] italic font-semibold text-gray-800 mt-0.5">
                 Indian Rupee {numberToWordsINR(order.totalAmount)}
               </p>
               {Number(order.notes ? 1 : 0) >= 0 && (
                 <>
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mt-4">Notes</p>
-                  <p className="text-[11px] text-gray-700 mt-0.5">{order.notes || "Thanks for your business."}</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mt-4">
+                    Notes
+                  </p>
+                  <p className="text-[11px] text-gray-700 mt-0.5">
+                    {order.notes || "Thanks for your business."}
+                  </p>
                 </>
               )}
             </div>
@@ -256,39 +345,51 @@ const OrderInvoice = ({ order, id }) => {
             <div className="w-[280px] shrink-0 text-[11px]">
               <div className="flex items-center justify-between py-1">
                 <span className="text-gray-700">Sub Total (Ex-GST)</span>
-                <span className="tabular-nums text-gray-900">{fmtNum(subtotal)}</span>
+                <span className="tabular-nums text-gray-900">
+                  {fmtNum(subtotal)}
+                </span>
               </div>
               {Number(order.discountAmount) > 0 && (
                 <div className="flex items-center justify-between py-1">
                   <span className="text-gray-700">Discount</span>
-                  <span className="tabular-nums text-gray-900">-{fmtNum(order.discountAmount)}</span>
+                  <span className="tabular-nums text-gray-900">
+                    -{fmtNum(order.discountAmount)}
+                  </span>
                 </div>
               )}
               <div className="flex items-center justify-between py-1">
-                <span className="text-gray-700">CGST{halfGstPercent.toFixed(1)} ({halfGstPercent.toFixed(1)}%)</span>
-                <span className="tabular-nums text-gray-900">{fmtNum(cgstTotal)}</span>
-              </div>
-              <div className="flex items-center justify-between py-1">
-                <span className="text-gray-700">SGST{halfGstPercent.toFixed(1)} ({halfGstPercent.toFixed(1)}%)</span>
-                <span className="tabular-nums text-gray-900">{fmtNum(sgstTotal)}</span>
+                <span className="text-gray-700">
+                  GST ({gstPercent.toFixed(1)}%)
+                </span>
+                <span className="tabular-nums text-gray-900">
+                  {fmtNum(taxAmount)}
+                </span>
               </div>
               {Number(order.shippingAmount) > 0 && (
                 <div className="flex items-center justify-between py-1">
                   <span className="text-gray-700">Shipping</span>
-                  <span className="tabular-nums text-gray-900">{fmtNum(order.shippingAmount)}</span>
+                  <span className="tabular-nums text-gray-900">
+                    {fmtNum(order.shippingAmount)}
+                  </span>
                 </div>
               )}
               <div className="flex items-center justify-between py-1.5 border-t-2 border-gray-900 mt-1">
                 <span className="font-bold text-gray-900">Total</span>
-                <span className="font-bold text-gray-900 tabular-nums">{fmtRs(order.totalAmount)}</span>
+                <span className="font-bold text-gray-900 tabular-nums">
+                  {fmtRs(order.totalAmount)}
+                </span>
               </div>
               <div className="flex items-center justify-between py-1">
                 <span className="text-gray-700">Payment Made</span>
-                <span className="tabular-nums text-gray-900">(-) {fmtNum(paidAmount)}</span>
+                <span className="tabular-nums text-gray-900">
+                  (-) {fmtNum(paidAmount)}
+                </span>
               </div>
               <div className="flex items-center justify-between py-1.5 border-t border-gray-300">
                 <span className="font-bold text-gray-900">Balance Due</span>
-                <span className="font-bold text-gray-900 tabular-nums">{fmtRs(balanceDue)}</span>
+                <span className="font-bold text-gray-900 tabular-nums">
+                  {fmtRs(balanceDue)}
+                </span>
               </div>
             </div>
           </div>

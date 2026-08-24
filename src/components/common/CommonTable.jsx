@@ -40,6 +40,7 @@ const CommonTable = ({
   rowMinH = "min-h-8",
   fixedLayout = false,
   onRowClick,
+  onCellClick,
   headerBgClass = "bg-gray-50",
   headerTextClass = "text-[14px] font-semibold text-gray-500 tracking-wide",
   headerHeightClass = "h-11",
@@ -53,7 +54,9 @@ const CommonTable = ({
         className="w-full border-collapse"
         style={{ minWidth, tableLayout: fixedLayout ? "fixed" : "auto" }}
       >
-        <thead className={`sticky top-0 z-10 ${headerBgClass} border-b border-gray-200`}>
+        <thead
+          className={`sticky top-0 z-10 ${headerBgClass} border-b border-gray-200`}
+        >
           <tr>
             {columns.map((col) => {
               const align = col.align || "left";
@@ -79,12 +82,21 @@ const CommonTable = ({
                     {col.sortable &&
                       (sortField === col.key ? (
                         sortDirection === "asc" ? (
-                          <ArrowUp size={12} className="text-gray-400 shrink-0" />
+                          <ArrowUp
+                            size={12}
+                            className="text-gray-400 shrink-0"
+                          />
                         ) : (
-                          <ArrowDown size={12} className="text-gray-400 shrink-0" />
+                          <ArrowDown
+                            size={12}
+                            className="text-gray-400 shrink-0"
+                          />
                         )
                       ) : (
-                        <ChevronsUpDown size={12} className="text-gray-300 shrink-0" />
+                        <ChevronsUpDown
+                          size={12}
+                          className="text-gray-300 shrink-0"
+                        />
                       ))}
                   </span>
                 </th>
@@ -116,13 +128,15 @@ const CommonTable = ({
                   const rawValue = item?.[col.key];
                   const tooltipText = col.tooltip
                     ? col.tooltip(item)
-                    : typeof rawValue === "string" || typeof rawValue === "number"
+                    : typeof rawValue === "string" ||
+                        typeof rawValue === "number"
                       ? rawValue
                       : undefined;
 
                   return (
                     <td
                       key={col.key}
+                      onClick={(event) => onCellClick?.(item, col.key, event)}
                       style={
                         col.width
                           ? { width: col.width, minWidth: col.width }
@@ -145,7 +159,9 @@ const CommonTable = ({
                             style={{ maxWidth: col.truncateWidth || "320px" }}
                             title={tooltipText ?? undefined}
                           >
-                            {col.render ? col.render(item, index) : (rawValue ?? "—")}
+                            {col.render
+                              ? col.render(item, index)
+                              : (rawValue ?? "—")}
                           </span>
                         ) : col.render ? (
                           col.render(item, index)
@@ -159,7 +175,9 @@ const CommonTable = ({
                 {renderRowActions && (
                   <td
                     className={`px-2 ${rowPaddingY} align-middle`}
-                    onClick={onRowClick ? (e) => e.stopPropagation() : undefined}
+                    onClick={
+                      onRowClick ? (e) => e.stopPropagation() : undefined
+                    }
                   >
                     <div className="flex items-center justify-center gap-1">
                       {renderRowActions(item, index)}

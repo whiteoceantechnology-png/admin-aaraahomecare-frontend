@@ -10,7 +10,8 @@
 // inventory API's exact response shape isn't confirmed from a live backend,
 // so a few fields are read defensively (multiple plausible names) rather
 // than assumed — adjust the fallbacks below if the real response differs.
-import { AlertTriangle, Layers } from "lucide-react";
+import { AlertTriangle, ChevronRight } from "lucide-react";
+import { useState } from "react";
 import Pagination from "../common/Pagination";
 import CommonTable from "../common/CommonTable";
 import CategoryFilterDropdown from "../common/CategoryFilterDropdown";
@@ -31,18 +32,25 @@ const SEARCH_WRAP_CLASS = "relative w-[225px] shrink-0";
 const hasValue = (v) => v !== null && v !== undefined;
 
 const fmtPrice = (n) =>
-  Number(n ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  Number(n ?? 0).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 
-const sellPrice = (item) => (hasValue(item?.discountPrice) ? item.discountPrice : item?.price);
+const sellPrice = (item) =>
+  hasValue(item?.discountPrice) ? item.discountPrice : item?.price;
 
-const reservedOf = (item) => (hasValue(item?.reservedQuantity) ? item.reservedQuantity : item?.reserved);
+const reservedOf = (item) =>
+  hasValue(item?.reservedQuantity) ? item.reservedQuantity : item?.reserved;
 
 const availableOf = (item) => {
   if (hasValue(item?.availableQuantity)) return Number(item.availableQuantity);
   if (hasValue(item?.available)) return Number(item.available);
   const stock = item?.stockQuantity;
   const reserved = reservedOf(item);
-  return hasValue(stock) && hasValue(reserved) ? Number(stock) - Number(reserved) : null;
+  return hasValue(stock) && hasValue(reserved)
+    ? Number(stock) - Number(reserved)
+    : null;
 };
 
 const VariantTable = ({
@@ -72,40 +80,90 @@ const VariantTable = ({
   totalItems = 0,
   onPageChange,
   onItemsPerPageChange,
-
-  selectedIds = new Set(),
-  onToggleSelect,
-  onToggleSelectAll,
-  onOpenBulkUpdate,
 }) => {
-  const allSelected = data.length > 0 && data.every((item) => selectedIds.has(item.id));
+  const [expandedProducts, setExpandedProducts] = useState(new Set());
+
+  const groupedRows = [];
+  const productGroups = new Map();
+  data.forEach((item) => {
+    const productKey = String(
+      item?.productId ?? item?.product?.id ?? item?.productName ?? "unknown",
+    );
+    if (!productGroups.has(productKey)) {
+      productGroups.set(productKey, {
+        productKey,
+        product: item,
+        variants: [],
+      });
+    }
+    productGroups.get(productKey).variants.push(item);
+  });
+  productGroups.forEach((group) => {
+    const totalStock = group.variants.every((item) =>
+      hasValue(item?.stockQuantity),
+    )
+      ? group.variants.reduce(
+          (sum, item) => sum + Number(item.stockQuantity),
+          0,
+        )
+      : null;
+    const totalReserved = group.variants.every((item) =>
+      hasValue(reservedOf(item)),
+    )
+      ? group.variants.reduce((sum, item) => sum + Number(reservedOf(item)), 0)
+      : null;
+    const totalAvailable = group.variants.every(
+      (item) => availableOf(item) != null,
+    )
+      ? group.variants.reduce((sum, item) => sum + Number(availableOf(item)), 0)
+      : null;
+    groupedRows.push({
+      ...group.product,
+      id: `product-${group.productKey}`,
+      rowType: "product",
+      productKey: group.productKey,
+      variantCount: group.variants.length,
+      inventoryId: group.product.id,
+      stockQuantity: totalStock,
+      reservedQuantity: totalReserved,
+      availableQuantity: totalAvailable,
+      productVariants: group.variants,
+    });
+    if (expandedProducts.has(group.productKey)) {
+      group.variants.forEach((variant) =>
+        groupedRows.push({
+          ...variant,
+          rowType: "variant",
+          parentProductKey: group.productKey,
+        }),
+      );
+    }
+  });
+
+  const handleRowClick = (item) => {
+    if (item.rowType === "product") {
+      onView?.({ ...item, id: item.inventoryId });
+      return;
+    }
+    return;
+  };
+
+  const toggleProduct = (item, event) => {
+    event.stopPropagation();
+    setExpandedProducts((previous) => {
+      const next = new Set(previous);
+      if (next.has(item.productKey)) next.delete(item.productKey);
+      else next.add(item.productKey);
+      return next;
+    });
+  };
 
   const columns = [
     {
       key: "select",
-      header: (
-        <input
-          type="checkbox"
-          checked={allSelected}
-          onChange={(e) => onToggleSelectAll?.(e.target.checked)}
-          aria-label="Select all rows on this page"
-          className="cursor-pointer"
-        />
-      ),
+      header: null,
       width: "36px",
-      render: (item) => (
-        <input
-          type="checkbox"
-          checked={selectedIds.has(item.id)}
-          onChange={(e) => {
-            e.stopPropagation();
-            onToggleSelect?.(item.id, e.target.checked);
-          }}
-          onClick={(e) => e.stopPropagation()}
-          aria-label={`Select ${item?.variantName || "row"}`}
-          className="cursor-pointer"
-        />
-      ),
+      render: (item) => (item.rowType === "product" ? null : null),
     },
     {
       key: "productName",
@@ -114,7 +172,25 @@ const VariantTable = ({
       truncate: true,
       truncateWidth: "240px",
       className: "font-bold text-[12.5px] text-[var(--mk-ink-900)]",
-      render: (item) => item?.productName || item?.product?.name || "—",
+      render: (item) =>
+        item.rowType === "product" ? (
+          <button
+            type="button"
+            onClick={(event) => toggleProduct(item, event)}
+            className="inline-flex items-center gap-1.5 font-bold cursor-pointer text-left"
+          >
+            <ChevronRight
+              size={14}
+              className={`transition-transform ${expandedProducts.has(item.productKey) ? "rotate-90" : ""}`}
+            />
+            {item?.productName || item?.product?.name || "—"}
+            <span className="font-normal text-[var(--mk-ink-400)]">
+              ({item.variantCount})
+            </span>
+          </button>
+        ) : (
+          <span className="pl-6 text-[var(--mk-ink-400)]">↳</span>
+        ),
     },
     {
       key: "variantName",
@@ -123,6 +199,10 @@ const VariantTable = ({
       truncate: true,
       truncateWidth: "100px",
       className: "text-[12px] text-[var(--mk-ink-700)]",
+      render: (item) =>
+        item.rowType === "product"
+          ? `${item.variantCount} variants`
+          : item?.variantName || "—",
     },
     {
       key: "sku",
@@ -131,7 +211,7 @@ const VariantTable = ({
       truncate: true,
       truncateWidth: "100px",
       className: "text-[var(--mk-ink-500)] text-[12px]",
-      render: (item) => item?.sku || "—",
+      render: (item) => (item.rowType === "product" ? "—" : item?.sku || "—"),
     },
     {
       key: "price",
@@ -139,6 +219,7 @@ const VariantTable = ({
       width: "120px",
       align: "right",
       render: (item) => {
+        if (item.rowType === "product") return "—";
         const sell = sellPrice(item);
         return (
           <div className="text-[var(--mk-ink-900)] font-semibold tabular-nums">
@@ -153,7 +234,8 @@ const VariantTable = ({
       width: "90px",
       align: "right",
       className: "text-[var(--mk-ink-700)] tabular-nums",
-      render: (item) => (hasValue(item?.stockQuantity) ? item.stockQuantity : "—"),
+      render: (item) =>
+        hasValue(item?.stockQuantity) ? item.stockQuantity : "—",
     },
     {
       key: "reservedQuantity",
@@ -162,8 +244,8 @@ const VariantTable = ({
       align: "right",
       className: "text-[var(--mk-ink-700)] tabular-nums",
       render: (item) => {
-        const r = reservedOf(item);
-        return hasValue(r) ? r : "—";
+        const reserved = reservedOf(item);
+        return hasValue(reserved) ? reserved : "—";
       },
     },
     {
@@ -174,14 +256,17 @@ const VariantTable = ({
       render: (item) => {
         const avail = availableOf(item);
         const isLow = avail != null && avail <= 10;
-        if (avail == null) return <span className="text-[var(--mk-ink-400)]">—</span>;
+        if (avail == null)
+          return <span className="text-[var(--mk-ink-400)]">—</span>;
         return isLow ? (
           <span className="inline-flex items-center gap-1 text-[var(--mk-warn)] font-semibold tabular-nums">
             <AlertTriangle size={13} />
             {avail}
           </span>
         ) : (
-          <span className="text-[var(--mk-ink-700)] font-medium tabular-nums">{avail}</span>
+          <span className="text-[var(--mk-ink-700)] font-medium tabular-nums">
+            {avail}
+          </span>
         );
       },
     },
@@ -190,11 +275,19 @@ const VariantTable = ({
       header: "Status",
       width: "90px",
       render: (item) => {
-        const active = item?.status === true || item?.status === "active";
+        const active =
+          item?.rowType === "product"
+            ? item.productVariants.some(
+                (variant) =>
+                  variant?.status === true || variant?.status === "active",
+              )
+            : item?.status === true || item?.status === "active";
         return (
           <span
             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-              active ? "bg-[var(--mk-ok-bg)] text-[var(--mk-ok)]" : "bg-black/[0.05] text-[var(--mk-ink-500)]"
+              active
+                ? "bg-[var(--mk-ok-bg)] text-[var(--mk-ok)]"
+                : "bg-black/[0.05] text-[var(--mk-ink-500)]"
             }`}
           >
             {active ? "Active" : "Inactive"}
@@ -209,7 +302,15 @@ const VariantTable = ({
       <div className="flex items-center gap-2 p-4 overflow-x-auto border-b border-[var(--mk-line)]">
         <div className={SEARCH_WRAP_CLASS}>
           <div className={FILTER_SEARCH_ICON_WRAP_CLASS}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[var(--mk-ink-400)]">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="text-[var(--mk-ink-400)]"
+            >
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
@@ -220,7 +321,11 @@ const VariantTable = ({
             value={searchTerm}
             onChange={(e) => onSearchChange?.(e.target.value)}
             disabled={lowStockOnly}
-            title={lowStockOnly ? "Search isn't available in Low stock view" : undefined}
+            title={
+              lowStockOnly
+                ? "Search isn't available in Low stock view"
+                : undefined
+            }
             className={`${FILTER_SEARCH_INPUT_CLASS} disabled:opacity-50 disabled:cursor-not-allowed`}
           />
         </div>
@@ -255,19 +360,10 @@ const VariantTable = ({
           className={`${filterChipClass(lowStockOnly)} shrink-0 disabled:opacity-50 disabled:cursor-not-allowed`}
         >
           Low stock
-          <span className={filterChipBadgeClass(lowStockOnly)}>{lowStockLoading ? "…" : lowStockCount}</span>
+          <span className={filterChipBadgeClass(lowStockOnly)}>
+            {lowStockLoading ? "…" : lowStockCount}
+          </span>
         </button>
-
-        {selectedIds.size > 0 && (
-          <button
-            type="button"
-            onClick={onOpenBulkUpdate}
-            className="ml-auto shrink-0 inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg text-[12.5px] font-semibold text-white bg-[var(--mk-primary)] hover:bg-[var(--mk-primary-hover)] transition-colors cursor-pointer"
-          >
-            <Layers size={14} />
-            Bulk update stock ({selectedIds.size})
-          </button>
-        )}
       </div>
 
       {error ? (
@@ -284,11 +380,13 @@ const VariantTable = ({
           )}
         </div>
       ) : loading ? (
-        <div className="py-16 text-center text-sm text-gray-400">Loading inventory…</div>
+        <div className="py-16 text-center text-sm text-gray-400">
+          Loading inventory…
+        </div>
       ) : (
         <CommonTable
           columns={columns}
-          data={data}
+          data={groupedRows}
           emptyMessage={
             lowStockOnly
               ? "No low-stock variants"
@@ -299,7 +397,12 @@ const VariantTable = ({
           headerTextClass="text-[10.5px] font-semibold text-[var(--mk-ink-400)] tracking-[0.08em]"
           headerHeightClass="h-[38px]"
           rowPaddingY="py-[9px]"
-          onRowClick={onView}
+          onRowClick={handleRowClick}
+          rowClassName={(item) =>
+            item.rowType === "product"
+              ? "bg-[var(--mk-primary-50)]/35 font-semibold"
+              : "bg-white"
+          }
         />
       )}
 

@@ -8,6 +8,7 @@
 // The table + "Add the standard ladder" editor are the same
 // VariantRow/VariantLadderEditor Edit Product uses, so both flows share one
 // variant vocabulary and match the reference variant-editor HTML exactly.
+import { useEffect, useState } from "react";
 import { Boxes } from "lucide-react";
 import VariantRow from "./VariantRow";
 import VariantLadderEditor from "./VariantLadderEditor";
@@ -16,14 +17,27 @@ const ProductVariantEditor = ({
   categoryName,
   productName,
   taxPercent,
-  variants,
+  variantsByUnit,
   onChange,
+  unitFamily,
 }) => {
+  const [activeUnitFamily, setActiveUnitFamily] = useState(unitFamily || "kg");
+  const variants = variantsByUnit[activeUnitFamily] || [];
+
+  useEffect(() => {
+    if (unitFamily && unitFamily !== activeUnitFamily) {
+      setActiveUnitFamily(unitFamily);
+    }
+  }, [unitFamily, activeUnitFamily]);
+
   const removeVariant = (index) =>
-    onChange(variants.filter((_, i) => i !== index));
+    onChange(
+      activeUnitFamily,
+      variants.filter((_, i) => i !== index),
+    );
 
   const handleAddBatch = (additions) => {
-    onChange([...variants, ...additions]);
+    onChange(activeUnitFamily, [...variants, ...additions]);
     return true;
   };
 
@@ -75,10 +89,14 @@ const ProductVariantEditor = ({
       )}
 
       <VariantLadderEditor
+        key={activeUnitFamily}
         categoryName={categoryName}
         productName={productName}
         taxPercent={taxPercent}
+        unitFamily={activeUnitFamily}
+        onUnitFamilyChange={setActiveUnitFamily}
         existingLabels={variants.map((v) => v.label)}
+        existingVariants={variants}
         onAddBatch={handleAddBatch}
       />
     </div>
