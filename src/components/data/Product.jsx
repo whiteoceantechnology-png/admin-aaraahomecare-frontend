@@ -187,6 +187,33 @@ const Product = ({ title = "Products" }) => {
   const openNew = () => setDrawer({ open: true, productId: null });
   const closeDrawer = () => setDrawer({ open: false, productId: null });
 
+  /* ============ DRAWER PREVIOUS / NEXT NAVIGATION ============
+     The order walked here is ProductTable's own visible row order — already
+     searched, category/status/health filtered and sorted — reported up via
+     onVisibleOrderChange. Reusing it (rather than the raw `products` array)
+     is what keeps Previous/Next correct while the list is filtered: the
+     drawer only ever steps between products the admin can actually see. */
+  const [visibleOrder, setVisibleOrder] = useState({
+    ids: [],
+    itemsPerPage: 10,
+  });
+
+  const navIndex =
+    drawer.productId == null ? -1 : visibleOrder.ids.indexOf(drawer.productId);
+  const hasPrev = navIndex > 0;
+  const hasNext = navIndex > -1 && navIndex < visibleOrder.ids.length - 1;
+
+  const goToNavIndex = (index) => {
+    const id = visibleOrder.ids[index];
+    if (id == null) return;
+    // Keep the table on the page the newly shown product lives on, so the
+    // list behind the drawer stays in step with it once the drawer closes.
+    const page = Math.floor(index / (visibleOrder.itemsPerPage || 1)) + 1;
+    if (page !== currentPage) handlePageChange(page);
+    // Only productId changes — the drawer stays open and reloads in place.
+    setDrawer({ open: true, productId: id });
+  };
+
   return (
     <div className="space-y-4">
       {/* HEADER */}
@@ -262,6 +289,7 @@ const Product = ({ title = "Products" }) => {
             onStatusChange={handleStatusChange}
             currentPage={currentPage}
             onPageChange={handlePageChange}
+            onVisibleOrderChange={setVisibleOrder}
           />
         )}
       </div>
@@ -273,6 +301,12 @@ const Product = ({ title = "Products" }) => {
         onClose={closeDrawer}
         onSaved={() => dispatch(getAllProducts())}
         onDeleted={() => dispatch(getAllProducts())}
+        onPrev={() => goToNavIndex(navIndex - 1)}
+        onNext={() => goToNavIndex(navIndex + 1)}
+        hasPrev={hasPrev}
+        hasNext={hasNext}
+        navPosition={navIndex + 1}
+        navTotal={navIndex > -1 ? visibleOrder.ids.length : 0}
       />
 
       {/* BULK IMPORT VARIANTS — same drawer/modal pattern as Product's own import */}

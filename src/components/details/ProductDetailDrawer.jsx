@@ -20,6 +20,8 @@ import {
   Boxes,
   Eye,
   FileText,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 
 import {
@@ -61,6 +63,12 @@ import {
 
 const FORM_ID = "product-detail-drawer-form";
 
+// Deliberately identical to Drawer.jsx's own close-button classes (plus a
+// disabled state) so the record navigator reads as part of the existing
+// header rather than as newly-styled chrome.
+const NAV_BTN_CLASS =
+  "flex items-center justify-center w-8 h-8 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-400";
+
 const imageUrl = (path) =>
   `${import.meta.env.VITE_API_BASE_URL}/admin/images/${path}`;
 
@@ -78,6 +86,41 @@ const DOCUMENT_TYPES = [
   { type: "COA", label: "COA" },
   { type: "SDS", label: "SDS / MSDS" },
 ];
+
+// GST slab dropdown offers exactly these two slabs, in this order. The tax
+// master (GET /admin/taxes) still holds the other rows (0%, 12%, 28%) and may
+// hold more than one row for the same percentage — both are filtered out when
+// the options are built, so the dropdown shows one 5% and one 18% entry and
+// nothing else. Nothing here edits the tax master itself; taxes already
+// assigned to existing products stay assigned.
+const GST_SLAB_PERCENTS = [5, 18];
+
+// Category-driven GST/HSN defaults are read straight off the category record
+// GET /admin/categories returns. This admin never writes those two fields
+// (CategoryDetailDrawer only sends name/categoryImage/isActive), so the
+// category master is their single source of truth and a category that has
+// nothing configured must resolve to null here — never to a guessed slab, a
+// zero, or a whitespace string that would look configured downstream.
+//
+// The alternate key names are accepted because the category payload's exact
+// naming for these two isn't pinned down anywhere in this codebase; once the
+// API settles on one, narrow these to it.
+const categoryHsnCode = (category) => {
+  const raw = category?.hsnCode ?? category?.hsn_code ?? category?.hsn;
+  const value = raw == null ? "" : String(raw).trim();
+  return value || null;
+};
+
+const categoryGstPercent = (category) => {
+  const raw =
+    category?.taxPercent ??
+    category?.gstPercent ??
+    category?.gst ??
+    category?.tax?.percent;
+  if (raw == null || raw === "") return null;
+  const value = Number(raw);
+  return Number.isNaN(value) ? null : value;
+};
 
 const STOCK_UNIT_OPTIONS = ["KG", "G", "L", "ML", "UNIT"];
 const unitFamilyForStockUnit = (unit) =>
@@ -130,6 +173,17 @@ const ProductDetailDrawer = ({
   onSaved,
   onDeleted,
   viewOnly = false,
+  // Previous/Next record navigation. The ordered list itself lives in
+  // Product.jsx (fed by ProductTable's own filtered+sorted rows), so the
+  // drawer only has to know whether a neighbour exists and how to ask for
+  // it — switching products never closes or remounts this drawer, it just
+  // changes `productId` and lets the existing fetch effect below reload.
+  onPrev,
+  onNext,
+  hasPrev = false,
+  hasNext = false,
+  navPosition = 0,
+  navTotal = 0,
 }) => {
   const dispatch = useDispatch();
   const {
@@ -145,6 +199,15 @@ const ProductDetailDrawer = ({
   const isCreate = productId == null;
 
   const [saving, setSaving] = useState(false);
+  // True while THIS drawer is fetching the product `productId` currently
+  // points at. Redux's `loading` only tracks getAllProducts (getProductById
+  // has no pending case), so without this the body would keep rendering the
+  // PREVIOUS product's values for the whole round-trip after Previous/Next,
+  // making the click look like it did nothing. Tagged with the request's own
+  // productId so a slower earlier request can't clear the flag belonging to a
+  // newer one when the admin clicks Next several times quickly.
+  const [detailLoading, setDetailLoading] = useState(false);
+  const detailRequestRef = useRef(null);
   const [imagePaths, setImagePaths] = useState([]);
   // Optimistic local preview — shown immediately after Apply, before the
   // upload round-trip resolves, so the box never sits empty waiting on the
@@ -254,8 +317,12 @@ const ProductDetailDrawer = ({
       setStagedVariantsByUnit({ kg: [], ml: [], unit: [] });
       setSpecGroups([]);
     } else {
-      refetch();
-      refetchDocuments();
+      const requestId = productId;
+      detailRequestRef.current = requestId;
+      setDetailLoading(true);
+      Promise.allSettled([refetch(), refetchDocuments()]).then(() => {
+        if (detailRequestRef.current === requestId) setDetailLoading(false);
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, productId]);
@@ -602,13 +669,21 @@ const ProductDetailDrawer = ({
 
   /* ================= SAVE PRODUCT ================= */
   const onFormSubmit = async (data) => {
+    // A product stored on a slab that's no longer offered renders as an
+    // unselected <select>, which submits "". Keep whatever is already stored
+    // rather than zeroing that product's taxId during an otherwise unrelated
+    // edit — the same leave-it-alone behaviour taxPercent already has. Never
+    // consulted on Add, where `product` is the previously-viewed product.
+    const taxId =
+      Number(data.taxId) || (isCreate ? 0 : Number(product?.taxId) || 0);
+
     const payload = {
       categoryId: Number(data.categoryId),
       brandId: Number(data.brandId),
       name: data.name,
       description: data.description,
       hsnCode: data.hsnCode,
-      taxId: Number(data.taxId),
+      taxId,
       taxPercent: Number(data.taxPercent),
       actualPrice: Number(data.actualPrice),
       discountPrice: Number(data.discountPrice),
@@ -814,14 +889,95 @@ const ProductDetailDrawer = ({
 
   const taxSelectValue = (id) => taxes.find((t) => String(t.id) === String(id));
 
+  // One option per allowed percentage: mapping over GST_SLAB_PERCENTS (rather
+  // than filtering `taxes`) fixes the 5%-then-18% order and inherently drops
+  // duplicates, since `find` keeps only the first tax record matching each
+  // percentage no matter how many the master holds.
+  const gstSlabOptions = GST_SLAB_PERCENTS.map((percent) =>
+    taxes.find((t) => Number(t.percent) === percent),
+  ).filter(Boolean);
+
+  // Both selects need their own register() result rather than an inline
+  // spread, because each also runs extra work on change: overriding the
+  // `onChange` that comes out of the spread would replace react-hook-form's
+  // own handler, so the field's value would stop being tracked and submit
+  // stale. Each handler below calls field.onChange(e) first for that reason.
+  const categoryField = register("categoryId", {
+    required: "Category is required",
+  });
+  const taxIdField = register("taxId");
+
+  // GST slab + HSN code follow the selected category, so neither has to be
+  // typed by hand. Driven from the select's change event (not a watcher on
+  // categoryId) so it only ever fires on a deliberate pick — a watcher would
+  // also fire for the reset() that loads an existing product and would
+  // overwrite that product's saved GST/HSN with its category's the instant
+  // the drawer opened.
+  const applyCategoryTaxDefaults = (categoryId) => {
+    const category = allCategoryList.find(
+      (c) => String(c.id) === String(categoryId),
+    );
+
+    // Only a slab the dropdown actually offers can be applied. A category
+    // configured at 0/12/28% — or configured with nothing at all — clears the
+    // field instead of falling back to a default that would be quietly wrong.
+    const percent = categoryGstPercent(category);
+    const slab =
+      percent == null
+        ? null
+        : gstSlabOptions.find((t) => Number(t.percent) === percent);
+    setValue("taxId", slab ? String(slab.id) : "", { shouldDirty: true });
+    setValue("taxPercent", slab ? slab.percent : "", { shouldDirty: true });
+
+    const hsnCode = categoryHsnCode(category);
+    setValue("hsnCode", hsnCode ?? "", { shouldDirty: true });
+  };
+
   return (
     <>
       <Drawer
         open={open}
         onClose={onClose}
-        title={isCreate ? "Add product" : product?.name || "Product"}
+        title={
+          isCreate
+            ? "Add product"
+            : (productDataReady && product?.name) || "Product"
+        }
         width="max-w-[900px]"
         compact
+        headerActions={
+          // Previous/Next sit in Drawer's existing headerActions slot, left of
+          // the close button, so nothing about the header's height, padding or
+          // title layout changes. Only rendered while editing an existing
+          // product that belongs to a known list (never in Add mode).
+          !isCreate && navTotal > 0 ? (
+            <div className="flex items-center gap-0.5 shrink-0">
+              <button
+                type="button"
+                onClick={onPrev}
+                disabled={!hasPrev}
+                aria-label="Previous product"
+                title="Previous product"
+                className={NAV_BTN_CLASS}
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <span className="text-[12px] font-medium text-gray-400 tabular-nums select-none px-0.5">
+                {navPosition}/{navTotal}
+              </span>
+              <button
+                type="button"
+                onClick={onNext}
+                disabled={!hasNext}
+                aria-label="Next product"
+                title="Next product"
+                className={NAV_BTN_CLASS}
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          ) : null
+        }
         footer={
           <>
             {!isCreate && product && (
@@ -853,7 +1009,7 @@ const ProductDetailDrawer = ({
           </>
         }
       >
-        {loading && !isCreate && !product ? (
+        {!isCreate && !productDataReady && (detailLoading || loading) ? (
           <p className="text-[13px] text-[var(--mk-ink-400)]">Loading…</p>
         ) : (
           <form id={FORM_ID} onSubmit={handleSubmit(onFormSubmit)}>
@@ -884,9 +1040,11 @@ const ProductDetailDrawer = ({
 
               <Field label="Category" error={errors.categoryId?.message}>
                 <select
-                  {...register("categoryId", {
-                    required: "Category is required",
-                  })}
+                  {...categoryField}
+                  onChange={(e) => {
+                    categoryField.onChange(e);
+                    applyCategoryTaxDefaults(e.target.value);
+                  }}
                   className={fldClass(errors.categoryId)}
                 >
                   <option value="">Select category</option>
@@ -900,18 +1058,19 @@ const ProductDetailDrawer = ({
 
               <Field
                 label="GST slab"
-                help="Applied once at checkout · prices stored ex-GST"
+               
               >
                 <select
-                  {...register("taxId")}
+                  {...taxIdField}
                   className={fldClass(false)}
                   onChange={(e) => {
+                    taxIdField.onChange(e);
                     const t = taxSelectValue(e.target.value);
-                    if (t) setValue("taxPercent", t.percent);
+                    setValue("taxPercent", t ? t.percent : "");
                   }}
                 >
                   <option value="">Select GST slab</option>
-                  {taxes.map((t) => (
+                  {gstSlabOptions.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.percent}% GST
                     </option>

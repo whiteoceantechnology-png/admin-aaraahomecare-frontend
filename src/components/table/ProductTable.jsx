@@ -72,6 +72,12 @@ const ProductTable = ({
   onStatusChange,
   currentPage = 1,
   onPageChange,
+  // Reports the exact row order the admin is looking at — after search,
+  // category, status and health filtering AND the active sort, across every
+  // page — so the detail drawer's Previous/Next can walk that same order.
+  // Search/filter/sort state that lives locally here is therefore honoured
+  // without Product.jsx having to duplicate any of this logic.
+  onVisibleOrderChange,
 }) => {
   const [healthFilter, setHealthFilter] = useState("all");
   const [sortField, setSortField] = useState("name");
@@ -130,6 +136,16 @@ const ProductTable = ({
     if (av > bv) return sortDirection === "asc" ? 1 : -1;
     return 0;
   });
+
+  // Joined into a plain string so the effect below only fires when the
+  // visible order actually changes — `sortedData` is a fresh array on every
+  // render and would otherwise re-notify the parent in a loop.
+  const visibleOrderIds = sortedData.map((item) => item.id);
+  const visibleOrderKey = `${itemsPerPage}|${visibleOrderIds.join(",")}`;
+  useEffect(() => {
+    onVisibleOrderChange?.({ ids: visibleOrderIds, itemsPerPage });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleOrderKey]);
 
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
