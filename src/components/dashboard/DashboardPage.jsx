@@ -2,6 +2,15 @@ import { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { getDashboard } from "../../redux/slices/dashboardSlice";
+import {
+  pickNumber,
+  KPI_KEYS,
+  normalizeStatusRows,
+  normalizeTrendPoints,
+  normalizeRecentOrders,
+  deltaPercent,
+  formatDeltaNote,
+} from "../../utils/dashboardMapping";
 import DashboardDetail from "./DashboardDetail";
 
 const StatCardSkeleton = () => (
@@ -53,10 +62,53 @@ const DashboardPage = ({ title }) => {
     dispatch(getDashboard());
   }, [dispatch]);
 
+  // Every block of the GET /admin/dashboard response, mapped onto what the
+  // existing UI already renders. Nothing below changes the layout — this is
+  // the data-binding layer only.
   const summary = dashboardList?.summary || {};
-  const ordersByStatus = dashboardList?.ordersByStatus || [];
-  const recentOrders = dashboardList?.recentOrders || [];
+  const kpis = dashboardList?.kpis || {};
+  const previousPeriodDelta = dashboardList?.previousPeriodDelta || {};
+  const ordersByStatus = normalizeStatusRows(dashboardList?.ordersByStatus);
+  const revenueTrend = normalizeTrendPoints(dashboardList?.revenueTrend);
+  const recentOrders = normalizeRecentOrders(dashboardList?.recentOrders);
   const topProducts = dashboardList?.topProducts || [];
+
+  // KPI values come from `kpis` first and fall back to `summary`, which is
+  // where this page read them from before the API grew a dedicated block —
+  // so a response carrying only one of the two still renders.
+  const totalRevenue = pickNumber([kpis, summary], KPI_KEYS.revenue) ?? 0;
+  const totalOrders = pickNumber([kpis, summary], KPI_KEYS.orders) ?? 0;
+  const totalCustomers = pickNumber([kpis, summary], KPI_KEYS.customers) ?? 0;
+  const totalProducts = pickNumber([kpis, summary], KPI_KEYS.products) ?? 0;
+  const pendingOrders = pickNumber([kpis, summary], KPI_KEYS.pending) ?? 0;
+  // Only used when the API reports it; otherwise the card keeps computing
+  // revenue ÷ orders exactly as it does today.
+  const averageOrderValue = pickNumber(
+    [kpis, summary],
+    KPI_KEYS.averageOrderValue,
+  );
+
+  // Rendered in each card's existing `note` slot — no new elements. A delta
+  // the mapping cannot read confidently stays null and the card shows the
+  // note it already had.
+  const deltaNotes = {
+    revenue: formatDeltaNote(
+      deltaPercent(previousPeriodDelta, KPI_KEYS.revenue, totalRevenue),
+    ),
+    orders: formatDeltaNote(
+      deltaPercent(previousPeriodDelta, KPI_KEYS.orders, totalOrders),
+    ),
+    averageOrderValue: formatDeltaNote(
+      deltaPercent(
+        previousPeriodDelta,
+        KPI_KEYS.averageOrderValue,
+        averageOrderValue ?? (totalOrders > 0 ? totalRevenue / totalOrders : 0),
+      ),
+    ),
+    pendingOrders: formatDeltaNote(
+      deltaPercent(previousPeriodDelta, KPI_KEYS.pending, pendingOrders),
+    ),
+  };
 
   return (
     <div>
@@ -96,12 +148,15 @@ const DashboardPage = ({ title }) => {
       {!loading && !error && (
         <DashboardDetail
           data={{
-            totalOrders: summary.totalOrders || 0,
-            totalCustomers: summary.totalCustomers || 0,
-            totalProducts: summary.totalProducts || 0,
-            pendingOrders: summary.pendingOrders || 0,
-            totalRevenue: summary.totalRevenue || 0,
+            totalOrders,
+            totalCustomers,
+            totalProducts,
+            pendingOrders,
+            totalRevenue,
+            averageOrderValue,
+            deltaNotes,
             ordersByStatus,
+            revenueTrend,
             recentOrders,
             topProducts,
           }}

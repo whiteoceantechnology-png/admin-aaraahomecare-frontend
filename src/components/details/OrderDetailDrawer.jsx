@@ -4,6 +4,7 @@
 // off the real order object from GET /admin/orders/{id} — nothing here is
 // hardcoded from the reference screenshot.
 import { useMemo } from "react";
+import { exGstSubtotal, gstPercentFor } from "../../utils/orderTotals";
 import { toast } from "react-hot-toast";
 import { Pencil, Printer, PackageCheck, Ban, Undo2, Phone, History, CreditCard, MessageCircle } from "lucide-react";
 import Drawer from "../common/Drawer";
@@ -15,7 +16,6 @@ import OrderActionMenu from "../common/OrderActionMenu";
 import { formatDateTime } from "../../utils/formatDate";
 import { getOrderNextAction } from "../../utils/orderNextAction";
 
-const hasValue = (v) => v !== null && v !== undefined;
 
 // The drawer's primary action is the whole panel's main CTA, so its default
 // ("outline"-tone) state is a solid brand button here — unlike the table
@@ -90,8 +90,12 @@ const OrderDetailDrawer = ({
   onPrintPackingSlip,
 }) => {
   const items = order?.items || [];
+  // Line prices are stored GST-INCLUSIVE, so this sum already contains the
+  // tax. The summary below shows it split into goods + GST rather than adding
+  // the GST on top of it again — see utils/orderTotals.js.
   const subtotal = items.reduce((sum, it) => sum + Number(it.subtotal ?? it.price * (it.quantity || 1) ?? 0), 0);
-  const gstPercent = subtotal > 0 && hasValue(order?.taxAmount) ? Math.round((Number(order.taxAmount) / subtotal) * 100) : null;
+  const subtotalExGst = exGstSubtotal(subtotal, order?.taxAmount);
+  const gstPercent = gstPercentFor(subtotal, order?.taxAmount);
   const address = order?.addressSnapshot;
   const payments = Array.isArray(order?.payments) ? order.payments : [];
   const paymentType = payments[0]?.method || order?.paymentMethod;
@@ -306,7 +310,7 @@ const OrderDetailDrawer = ({
               close to the card without a negative-margin hack. */}
           <div>
             <div className="rounded-[8px] border border-[var(--mk-line)] px-3.5 py-[10px]">
-              <Row label="Subtotal (ex-GST)" value={fmtMoney(subtotal)} />
+              <Row label="Subtotal (ex-GST)" value={fmtMoney(subtotalExGst)} />
               <Row label={gstPercent != null ? `GST @ ${gstPercent}%` : "GST"} value={fmtMoney(order.taxAmount)} />
               <Row label="Shipping" value={fmtMoney(order.shippingAmount)} />
               <div className="mt-2 pt-2 border-t border-[var(--mk-line)]">
@@ -332,7 +336,8 @@ const OrderDetailDrawer = ({
               </div>
             </div>
             <p className="text-[11.5px] text-[var(--mk-ink-400)] mt-1.5">
-              GST applied once, at checkout · prices stored GST-exclusive.
+              Prices are stored GST-inclusive · the GST above is the portion
+              already contained in them, not an extra charge.
             </p>
           </div>
 

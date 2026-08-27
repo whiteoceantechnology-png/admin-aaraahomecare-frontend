@@ -251,7 +251,7 @@ table td {
 }
 .invoice-border {
   position: relative;
-  border: 1.5px solid #1a1a1a;
+  border: 1px solid #666;
   min-height: 1000px;
 }
 .invoice-page-number {
@@ -269,11 +269,31 @@ table td {
   page-break-inside: avoid;
 }
 
-/* #invoice-print-area is portaled directly onto <body> by InvoiceModal.jsx
-   (see that file's header comment) — hidden on screen, since the visible
-   preview is a second, non-portaled OrderInvoice rendered normally inside
-   the modal. */
-#invoice-print-area {
+/* Packing slip — on screen this is one A4-proportioned page (794px is A4
+   width at 96dpi, the same figure .invoice-sheet uses), so the preview shows
+   the sheet at the size it prints. Printing hands the width back to the page
+   itself, since the paper IS the page by then. */
+.packing-slip {
+  width: 794px;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+/* Every line on the slip is a bare <p>, which picks up Bootstrap unlayered
+   `p { margin-bottom: 1rem }` — the same collision .rte-content documents
+   below. Unlayered wins over layered, so no Tailwind leading-* class can
+   undo it: it silently added 16px UNDER EVERY LINE, inflating a 7.8mm line
+   of the FROM block to 12mm and stretching the whole sheet ~60mm taller than
+   the reference. Line spacing here comes from line-height alone. */
+.packing-slip p {
+  margin: 0 !important;
+}
+
+/* Both print areas are portaled directly onto <body> by their modals (see
+   those files' header comments) — hidden on screen, since what the admin
+   sees is a second, non-portaled copy rendered normally inside the modal. */
+#invoice-print-area,
+#packing-slip-print-area {
   display: none;
 }
 
@@ -284,26 +304,80 @@ table td {
    controls (e.g. the "Print" button itself) that must show on screen but
    never in the printed output. */
 @media print {
+  /* Zero page margin, so each document owns its own margin in real
+     millimetres instead of inheriting a browser-computed one. Both sheets
+     below re-add the same 10mm as padding, which is what keeps the printed
+     geometry identical to the preview. */
   @page {
-    size: A4 portrait;
-    margin: 10mm;
+    size: A4;
+    margin: 0;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
   }
 
   body * {
     visibility: hidden;
+  }
+  /* Packing slip — printed from a <body>-level portal, in normal flow, with
+     every one of the modal's layout effects explicitly neutralised.
+
+     The old rule put this element at `position: absolute; top: 0` while it
+     was still INSIDE the modal. That does not reach the top of the page:
+     .animate-modal-panel uses `animation: ... both`, so the panel keeps
+     `transform: translateY(0) scale(1)` applied for good, and a transformed
+     element becomes the containing block for its absolutely positioned
+     descendants. `top: 0` therefore resolved against the vertically centred
+     modal panel rather than the sheet, printing the slip halfway down the
+     page under a tall blank band. Static positioning inside the modal would
+     not have fixed it either — the slip would still sit inside the panel's
+     centring and padding — which is why the portal is the real fix and these
+     resets are the belt to its braces. */
+  body:has(#packing-slip-print-area) #root {
+    display: none !important;
   }
   #packing-slip-print-area,
   #packing-slip-print-area * {
     visibility: visible;
   }
   #packing-slip-print-area {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    max-width: 100%;
+    display: block !important;
+    /* Was inherited from @page { margin: 10mm } before that went to 0 —
+       re-added here so the slip prints at exactly the geometry it already
+       had, verified at 24.6mm to the first line. */
+    padding: 10mm;
+    box-sizing: border-box;
+    position: static;
+    top: auto;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    transform: none;
     margin: 0;
-    padding: 16px;
+    /* PackingSlip.jsx supplies its own page padding; anything here would
+       stack on top of it and indent the slip twice. */
+    padding: 0;
+    width: auto;
+    max-width: none;
+    height: auto;
+    min-height: 0;
+    box-shadow: none;
+  }
+  .packing-slip {
+    width: auto;
+    max-width: none;
+    margin: 0;
+  }
+  /* The slip's own container supplies the page padding; #packing-slip-print-
+     area above adds the 10mm sheet margin around it. */
+  /* Keep a product and its variant line together if a long order runs onto
+     a second sheet. */
+  .packing-slip-row {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   /* The invoice uses a different isolation strategy from the packing slip
@@ -327,18 +401,45 @@ table td {
   #invoice-print-area {
     display: block !important;
   }
-  /* Undo the on-screen "page card" look — printing already IS the page, so
-     no shadow/gap/min-height is needed; the browser's own pagination takes
-     over from here, breaking wherever .invoice-page-break or a natural
-     table overflow says to. */
+  /* Each .invoice-sheet IS one physical A4 page now: full 210mm width, a
+     10mm margin supplied as padding (since @page margin is 0), and a
+     min-height that fills the sheet so the bordered frame reaches the bottom
+     the way the reference's does.
+
+     min-height is 295mm rather than a full 297mm on purpose: at exactly the
+     page height any sub-pixel rounding in the browser's layout spills a
+     fraction of a millimetre onto a second sheet, which is precisely the
+     "unnecessary blank page" this is meant to avoid. 295mm fills the page to
+     the eye with 2mm of rounding headroom. */
   .invoice-sheet {
-    width: auto;
+    width: 210mm;
     max-width: none;
+    min-height: 295mm;
     margin: 0;
+    padding: 10mm;
+    box-sizing: border-box;
     box-shadow: none;
+    display: flex;
+    flex-direction: column;
   }
   .invoice-border {
-    border: 1.5px solid #1a1a1a;
+    border: 1px solid #666;
+    min-height: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  /* Nothing in the printed invoice may inherit modal geometry. */
+  #invoice-print-area {
+    position: static;
+    top: auto;
+    left: auto;
+    transform: none;
+    margin: 0;
+    padding: 0;
+    width: auto;
+    max-width: none;
+    height: auto;
     min-height: 0;
   }
   .invoice-page-break {

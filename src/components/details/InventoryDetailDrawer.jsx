@@ -225,7 +225,7 @@ const InventoryDetailDrawer = ({ productId, open, onClose, onMutated }) => {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 mt-3.5 pt-3.5 border-t border-[var(--mk-line)]">
+            {/* <div className="grid grid-cols-3 gap-3 mt-3.5 pt-3.5 border-t border-[var(--mk-line)]">
               <InfoCell label="SKU" value={item.sku} />
               <InfoCell
                 label="Price"
@@ -258,7 +258,7 @@ const InventoryDetailDrawer = ({ productId, open, onClose, onMutated }) => {
                   />
                 }
               />
-            </div>
+            </div> */}
           </div>
 
           {/* STOCK DETAILS + ACTIONS */}

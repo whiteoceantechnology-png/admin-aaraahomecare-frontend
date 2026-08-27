@@ -36,14 +36,14 @@ export const SIZE_SYSTEMS = {
     key: "BULK_KG",
     label: "Bulk · 1 / 5 / 10 kg",
     units: ["kg"],
-    steps: [, [25, "g"], [50, "g"], [100, "g"], [250, "g"], [500, "g"],[1, "kg"], [5, "kg"], [10, "kg"]],
+    steps: [[25, "g"], [50, "g"], [100, "g"], [250, "g"], [500, "g"], [1, "kg"], [5, "kg"], [10, "kg"]],
   },
   VOLUME: {
     key: "VOLUME",
     label: "Volume · 25 ml – 1 L",
     units: ["ml", "L"],
     steps: [
-       [100, "ml"], [250, "ml"], [500, "ml"], [1, "L"],
+      [25, "ml"], [50, "ml"], [100, "ml"], [250, "ml"], [500, "ml"], [1, "L"],
     ],
   },
   PACK: {
@@ -139,6 +139,18 @@ export function findExistingVariantForStep(existingVariants, qty, unit) {
     const p = parseVariantLabel(v.variantName);
     return p && baseQty(p.qty, p.unit) === baseQty(qty, unit) && unitFamily(p.unit) === unitFamily(unit);
   });
+}
+
+// The ladder only ever offers sizes the product does NOT already have: a
+// step whose size already exists as a variant is dropped from the ladder
+// entirely, so a size can never be added twice. Matching is by base quantity
+// within the same unit family (via findExistingVariantForStep), not by label
+// text, so an existing "500 ml" also removes a "0.5 L" step and an existing
+// "1 kg" never masks a "1 L" one.
+export function availableLadderSteps(steps, existingVariants) {
+  return (steps || []).filter(
+    ([qty, unit]) => !findExistingVariantForStep(existingVariants, qty, unit),
+  );
 }
 
 export const isCountedUnit = (unit) => unit === "piece" || unit === "pack";

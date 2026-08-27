@@ -1,10 +1,14 @@
-// "Add the standard ladder" editor — every standard size for the product is
-// always shown as its own editable row, no click-to-edit step. A step that
-// already exists as a real, persisted variant is pre-filled straight from
-// that variant's stored price/offer (SKU shown, not editable); everything
-// else is a blank row for adding a brand-new size. Saving sends changed
-// existing rows through onUpdateBatch (updates that variant's id — never a
-// duplicate) and touched new rows through onAddBatch, in one action.
+// "Add the standard ladder" editor — EVERY standard size for the product is
+// shown as its own editable row. A size that already exists as a real,
+// persisted variant is pre-filled straight from that variant's stored
+// price/offer (its SKU shown, not editable) and carries that variant's id, so
+// editing it UPDATES that variant; a size with no variant yet is a blank row
+// that CREATES one. Which of the two a row is is decided by size identity —
+// findExistingVariantForStep matches base quantity within the unit family —
+// never by price or SKU, so a variant can never be duplicated by editing it.
+//
+// Saving sends changed existing rows through onUpdateBatch (by variantId) and
+// touched new rows through onAddBatch, in one action.
 // A GST inclusive/ex-GST toggle converts typed catalogue prices to the
 // ex-GST value that's actually stored, and a collapsible custom-size
 // section covers anything outside the standard ladder.
@@ -76,6 +80,9 @@ const VariantLadderEditor = ({
   onUpdateBatch,
   unitFamily: controlledUnitFamily,
   onUnitFamilyChange,
+  // Lets the drawer's "Save changes" also commit ladder rows the admin has
+  // priced but not pressed Add on, instead of silently discarding them.
+  registerSave,
 }) => {
   const ladderVariants = (existingVariants || []).map((variant) => ({
     ...variant,
@@ -120,6 +127,12 @@ const VariantLadderEditor = ({
     : existingLabels;
   const existing = effectiveExistingLabels.map(normalize);
 
+  // Every standard size is a row: existing ones seeded from their variant
+  // (see the effect below), the rest blank. The seeding effect, the rendered
+  // rows and the save payload all read this same list, so they cannot
+  // disagree about which sizes exist.
+  const ladderSteps = sizeSystem.steps;
+
   // A signature of the real variants' current values — re-seeding on this
   // (not just on mount) is what makes a just-saved edit's fresh server
   // value show up instead of the pre-save one, without wiping the admin's
@@ -149,7 +162,7 @@ const VariantLadderEditor = ({
 
   useEffect(() => {
     const seed = {};
-    sizeSystem.steps.forEach(([qty, unit]) => {
+    ladderSteps.forEach(([qty, unit]) => {
       const match = findExistingVariantForStep(ladderVariants, qty, unit);
       if (!match) {
         seed[stepKey(qty, unit)] = { price: "", offerPrice: "" };
@@ -232,7 +245,7 @@ const VariantLadderEditor = ({
   //     : `storefront shows ₹${toInclGst(price, taxPercent).toFixed(2)} incl.`;
   // };
 
-  const rows = sizeSystem.steps.map(([qty, unit]) => {
+  const rows = ladderSteps.map(([qty, unit]) => {
     const key = stepKey(qty, unit);
     const input = ladderInputs[key] || { price: "", offerPrice: "" };
     const isExisting = !!input.variantId || input.staged;
@@ -311,29 +324,43 @@ const VariantLadderEditor = ({
             ? ""
             : toExGst(input.offerPrice, taxPercent, gstInclusive),
         sku: input.sku,
+        // Carried through untouched — this editor has no stock field, and the
+        // update endpoint takes the whole variant.
+        stock: input.variantObj?.stockQuantity,
       }));
       const updateOk = await onUpdateBatch(updates);
       ok = ok && updateOk !== false;
     }
 
     setSubmittingLadder(false);
-    if (ok) {
-      setLadderInputs((prev) => {
-        const next = { ...prev };
-        readyToAdd.forEach((r) => delete next[r.key]);
-        readyToUpdate.forEach((r) => {
-          next[r.key] = {
-            ...next[r.key],
-            original: {
-              price: next[r.key].price,
-              offerPrice: next[r.key].offerPrice,
-            },
-          };
-        });
-        return next;
+    if (!ok) return false;
+
+    setLadderInputs((prev) => {
+      const next = { ...prev };
+      readyToAdd.forEach((r) => delete next[r.key]);
+      readyToUpdate.forEach((r) => {
+        next[r.key] = {
+          ...next[r.key],
+          original: {
+            price: next[r.key].price,
+            offerPrice: next[r.key].offerPrice,
+          },
+        };
       });
-    }
+      return next;
+    });
+    return true;
   };
+
+  // Re-registered every render so the drawer holds a save closed over the
+  // CURRENT inputs. Returns true when there is simply nothing pending.
+  useEffect(() => {
+    registerSave?.(async () => {
+      if (readyToAdd.length === 0 && readyToUpdate.length === 0) return true;
+      return await handleSaveLadder();
+    });
+    return () => registerSave?.(null);
+  });
 
   /* ---------- custom size ---------- */
   const cLabel =
@@ -346,8 +373,15 @@ const VariantLadderEditor = ({
     cQty !== "" && !(Number(cQty) > 0) ? "Quantity must be above 0." : null;
   const cPriceError = cQty !== "" ? validatePrice(cPrice) : null;
   const cOfferError = validateOfferPrice(cOffer, cPrice);
+  // Compared by size rather than by label text so "0.5 L" is still caught
+  // against an existing "500 ml", and "25g" against "25 g". The old
+  // label-string check missed both. Falls back to the label comparison for
+  // free-text sizes that parseVariantLabel cannot read as a quantity.
   const cDuplicate =
-    cQty !== "" && Number(cQty) > 0 && existing.includes(normalize(cLabel));
+    cQty !== "" &&
+    Number(cQty) > 0 &&
+    (!!findExistingVariantForStep(ladderVariants, Number(cQty), cUnit) ||
+      existing.includes(normalize(cLabel)));
   const canAddCustom =
     Number(cQty) > 0 &&
     !cQtyError &&

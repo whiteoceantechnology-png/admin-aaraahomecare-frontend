@@ -52,13 +52,18 @@ import IconButton from "../common/IconButton";
 import ImageEditorModal from "../common/ImageEditorModal";
 import RichTextEditor from "../common/RichTextEditor";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
-import VariantRow from "../form/VariantRow";
 import VariantLadderEditor from "../form/VariantLadderEditor";
 import ProductVariantEditor from "../form/ProductVariantEditor";
 import { productHealth } from "../../utils/productHealth";
 import {
   inferSizeSystemFromVariants,
   ladderBadgeLabel,
+  findExistingVariantForStep,
+  parseVariantLabel,
+  baseQty,
+  // Aliased: `unitFamily` is also used as a callback parameter name further
+  // down this file, and shadowing it would turn these into a runtime crash.
+  unitFamily as unitFamilyOf,
 } from "../../utils/variantSizeSystems";
 
 const FORM_ID = "product-detail-drawer-form";
@@ -68,6 +73,13 @@ const FORM_ID = "product-detail-drawer-form";
 // header rather than as newly-styled chrome.
 const NAV_BTN_CLASS =
   "flex items-center justify-center w-8 h-8 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-400";
+
+// Same money format the variants table has always displayed.
+const fmtMoney = (n) =>
+  `₹${Number(n || 0).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 
 const imageUrl = (path) =>
   `${import.meta.env.VITE_API_BASE_URL}/admin/images/${path}`;
@@ -227,6 +239,13 @@ const ProductDetailDrawer = ({
 
   const [deleteVariantTarget, setDeleteVariantTarget] = useState(null);
   const [deletingVariant, setDeletingVariant] = useState(false);
+
+  // The ladder hands its save function up here so one click on "Save
+  // changes" commits the product fields, the specification, edits to existing
+  // variants and newly priced ladder rows together. It stays a ref (not
+  // state) because it is re-registered on every child render to stay closed
+  // over the child's current drafts — as state that would loop.
+  const ladderSaveRef = useRef(null);
 
   // Specification — edited inline (no modal), grouped as
   // [{ title, items: [{key, value}] }] matching the real
@@ -735,6 +754,19 @@ const ProductDetailDrawer = ({
       }
     }
 
+    // Ladder rows the admin edited or filled in but did not press the
+    // ladder's own button for are part of the same Save changes click: this
+    // flushes both its updates (existing variants, by id) and its additions.
+    // It runs after the product update above succeeds and reports its own
+    // failures through its existing toasts, so a variant problem never masks
+    // the fact that the product itself saved.
+    if (!isCreate) {
+      const variantsOk = await ladderSaveRef.current?.();
+      if (variantsOk === false) {
+        toast.error("Product saved, but some variant changes were not saved");
+      }
+    }
+
     // Staged variants only exist on Add Product — POST /admin/variants needs
     // a real productId, which doesn't exist until the product above just
     // got created, so they're created one by one right here, immediately
@@ -805,7 +837,49 @@ const ProductDetailDrawer = ({
   };
 
   /* ================= VARIANTS ================= */
-  const handleAddVariantBatch = async (additions) => {
+  // Last line of defence before POST /admin/variants. The ladder already
+  // hides sizes the product has, but that is a UI affordance: this re-checks
+  // every addition against the product's variants as they exist right now and
+  // drops any that would duplicate one, so a stale drawer, a double-submit or
+  // a hand-crafted call still cannot create the same size twice. Matching is
+  // by base quantity within the unit family, so "0.5 L" is rejected against an
+  // existing "500 ml".
+  const rejectDuplicateSizes = (additions) => {
+    const kept = [];
+    const skipped = [];
+    additions.forEach((v) => {
+      // Ladder and custom additions both carry qty/unit directly; the label
+      // parse is only the fallback for an addition that carries just a name.
+      const parsed =
+        v.qty != null ? { qty: v.qty, unit: v.unit } : parseVariantLabel(v.label);
+      const clashesWithSaved =
+        parsed?.qty != null &&
+        !!findExistingVariantForStep(variants, parsed.qty, parsed.unit);
+      // Also guards against the same size appearing twice inside one batch.
+      const clashesWithinBatch = kept.some((k) => {
+        const p = k.qty != null ? { qty: k.qty, unit: k.unit } : parseVariantLabel(k.label);
+        return (
+          p?.qty != null &&
+          parsed?.qty != null &&
+          baseQty(p.qty, p.unit) === baseQty(parsed.qty, parsed.unit) &&
+          unitFamilyOf(p.unit) === unitFamilyOf(parsed.unit)
+        );
+      });
+      if (clashesWithSaved || clashesWithinBatch) skipped.push(v);
+      else kept.push(v);
+    });
+    return { kept, skipped };
+  };
+
+  const handleAddVariantBatch = async (rawAdditions) => {
+    const { kept: additions, skipped } = rejectDuplicateSizes(rawAdditions);
+    if (skipped.length > 0) {
+      toast.error(
+        `${skipped.map((v) => v.label).join(", ")} already exist${skipped.length === 1 ? "s" : ""} on this product`,
+      );
+    }
+    if (additions.length === 0) return false;
+
     const results = await Promise.all(
       additions.map((v) =>
         dispatch(
@@ -1100,7 +1174,7 @@ const ProductDetailDrawer = ({
                 </select>
               </Field> */}
 
-              <Field
+              {/* <Field
                 label="Actual price (₹)"
                 error={errors.actualPrice?.message}
               >
@@ -1113,9 +1187,9 @@ const ProductDetailDrawer = ({
                   })}
                   className={fldClass(errors.actualPrice)}
                 />
-              </Field>
+              </Field> */}
 
-              <Field
+              {/* <Field
                 label="Discount price (₹)"
                 error={errors.discountPrice?.message}
               >
@@ -1128,7 +1202,7 @@ const ProductDetailDrawer = ({
                   })}
                   className={fldClass(errors.discountPrice)}
                 />
-              </Field>
+              </Field> */}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3.5">
@@ -1467,6 +1541,11 @@ const ProductDetailDrawer = ({
                     </p>
                   </div>
                 ) : (
+                  /* Saved variants, shown as a list. Editing happens in the
+                     ladder below, where each of these sizes appears again as
+                     a pre-filled editable row carrying its variantId. This
+                     list re-renders from `variants`, so it picks up new
+                     values as soon as a save refetches the product. */
                   <div className="border border-[var(--mk-line)] rounded-lg overflow-hidden overflow-x-auto">
                     <table className="w-full text-[12.5px]">
                       <thead>
@@ -1478,44 +1557,61 @@ const ProductDetailDrawer = ({
                             SKU
                           </th>
                           <th className="text-left font-semibold px-2.5 py-2 whitespace-nowrap">
-                            Price
+                            List ₹ (ex-GST)
                           </th>
-                          {/* <th className="text-right font-semibold px-2.5 py-2 whitespace-nowrap">
-                            Incl. GST {product?.taxPercent ?? 0}%
-                          </th> */}
+                          <th className="text-left font-semibold px-2.5 py-2 whitespace-nowrap">
+                            Offer ₹
+                          </th>
                           {!viewOnly && <th className="px-2 py-2" />}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[var(--mk-line)]">
-                        {variants.map((v) => (
-                          <VariantRow
-                            key={v.id}
-                            variant={{
-                              label: v.variantName,
-                              sku: v.sku || "—",
-                              price: v.price ?? 0,
-                              offerPrice:
-                                v.discountPrice != null &&
-                                Number(v.discountPrice) !== Number(v.price)
-                                  ? v.discountPrice
-                                  : "",
-                            }}
-                            // taxPercent={product?.taxPercent}
-                            onRemove={
-                              viewOnly
-                                ? undefined
-                                : () => setDeleteVariantTarget(v)
-                            }
-                          />
-                        ))}
+                        {variants.map((v) => {
+                          // The API stores discountPrice = price to mean "no
+                          // offer"; showing that back would make every row
+                          // look discounted.
+                          const hasOffer =
+                            v.discountPrice != null &&
+                            Number(v.discountPrice) !== Number(v.price);
+                          return (
+                            <tr key={v.id}>
+                              <td className="px-2.5 py-1.5 font-medium text-[var(--mk-ink-900)] whitespace-nowrap">
+                                {v.variantName}
+                              </td>
+                              <td className="px-2.5 py-1.5 text-[var(--mk-ink-400)] whitespace-nowrap">
+                                {v.sku || "—"}
+                              </td>
+                              <td className="px-2.5 py-1.5 tabular-nums text-[var(--mk-ink-700)] whitespace-nowrap">
+                                {fmtMoney(v.price)}
+                              </td>
+                              <td className="px-2.5 py-1.5 tabular-nums text-[var(--mk-ink-700)] whitespace-nowrap">
+                                {hasOffer ? fmtMoney(v.discountPrice) : "—"}
+                              </td>
+                              {!viewOnly && (
+                                <td className="px-2 py-1.5 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeleteVariantTarget(v)}
+                                    aria-label={`Remove ${v.variantName}`}
+                                    className="inline-flex items-center justify-center w-7 h-7 rounded-md text-[var(--mk-ink-400)] hover:bg-[var(--mk-dgr-bg)] hover:text-[var(--mk-dgr)] transition-colors cursor-pointer"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
                 )}
 
-                {/* Standard ladder — add-only. A step that already matches a
-                    real variant above shows as "Added"; editing an existing
-                    variant's price/stock is remove-and-re-add, not inline. */}
+                {/* Standard ladder — EDIT + ADD. Every standard size shows a
+                    row: one matching an existing variant is pre-filled from it
+                    and saves through onUpdateBatch against that variant's id
+                    (never a duplicate); a size with no variant yet saves
+                    through onAddBatch as a new one. */}
                 {!viewOnly && (
                   <VariantLadderEditor
                     categoryName={
@@ -1526,6 +1622,9 @@ const ProductDetailDrawer = ({
                     existingVariants={productDataReady ? variants : undefined}
                     onAddBatch={handleAddVariantBatch}
                     onUpdateBatch={handleUpdateVariantBatch}
+                    registerSave={(fn) => {
+                      ladderSaveRef.current = fn;
+                    }}
                   />
                 )}
               </div>

@@ -1,5 +1,6 @@
 // src/components/details/OrderDetailsPage.jsx
 import { useEffect, useRef, useState } from "react";
+import { exGstSubtotal } from "../../utils/orderTotals";
 import { useParams, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { toast } from "react-hot-toast";
@@ -141,7 +142,11 @@ const OrderDetailsPage = () => {
 
   const address = order?.addressSnapshot;
   const items = order?.items || [];
+  // GST-INCLUSIVE, like every stored line price — the summary splits it into
+  // goods + tax so the rows add up to the grand total instead of exceeding it
+  // by the tax amount. See utils/orderTotals.js.
   const subtotal = items.reduce((sum, it) => sum + Number(it.subtotal || 0), 0);
+  const subtotalExGst = exGstSubtotal(subtotal, order?.taxAmount);
   const paymentMethod = order?.payments?.[0]?.method || order?.paymentMethod;
 
   const currentStatus = (order?.status || "").toLowerCase();
@@ -597,7 +602,7 @@ const OrderDetailsPage = () => {
 
             <InfoCard title="Order Summary" icon={Receipt} id="order-summary">
               <dl className="space-y-1">
-                <Row label="Subtotal" value={`₹${subtotal}`} />
+                <Row label="Subtotal (ex-GST)" value={`₹${subtotalExGst}`} />
                 <Row
                   label="Discount"
                   value={`-₹${order.discountAmount ?? 0}`}

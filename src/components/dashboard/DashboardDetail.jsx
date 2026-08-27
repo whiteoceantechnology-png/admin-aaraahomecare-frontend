@@ -110,11 +110,20 @@ const SectionCard = ({ title, action, children, className = "" }) => (
   </div>
 );
 
-// Simple honest area/line sparkline over the recent orders the dashboard API
-// already returns — no fabricated "collected vs GMV" series, since the
-// backend doesn't distinguish captured payments from order totals yet.
-const OrderTrendChart = ({ orders }) => {
+// Area/line chart over the dashboard API's own `revenueTrend` series. Falls
+// back to deriving a series from recent orders when the response carries no
+// trend, which is what this chart did before the API provided one — so the
+// panel never goes blank on a response that omits the block.
+//
+// The SVG below is unchanged: this only changes where its points come from.
+const OrderTrendChart = ({ trend = [], orders = [] }) => {
   const points = useMemo(() => {
+    if (trend.length > 0) {
+      return trend
+        .slice()
+        .sort((a, b) => new Date(a.date) - new Date(b.date))
+        .map((p) => ({ date: p.date, amount: Number(p.amount) || 0 }));
+    }
     const withDates = orders
       .filter((o) => o?.createdAt)
       .slice()
@@ -123,7 +132,7 @@ const OrderTrendChart = ({ orders }) => {
       date: o.createdAt,
       amount: Number(o.totalAmount) || 0,
     }));
-  }, [orders]);
+  }, [trend, orders]);
 
   if (points.length < 2) {
     return <EmptyState icon={TrendingUp} message="Not enough recent orders to plot a trend yet" />;
@@ -181,21 +190,35 @@ const DashboardDetail = ({ data }) => {
     dispatch(getAllVariants());
   }, [dispatch]);
 
-  // "Recent orders" reads from the same GET /admin/orders data the Orders
-  // list page already uses (state.order.allOrders, fetched above) instead of
-  // the separate /admin/dashboard aggregate's own `recentOrders` field — that
-  // field was coming back empty/absent, which silently rendered this whole
-  // section as "No data available" even though real order data exists.
-  const recentOrders = useMemo(
-    () =>
-      [...allOrders]
-        .filter((o) => o?.createdAt)
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-        .slice(0, 8),
-    [allOrders],
-  );
+  // "Recent orders" is the dashboard API's own `recentOrders` block. It used
+  // to be read from GET /admin/orders instead, because the API field was
+  // coming back empty and the panel rendered "No data available"; that
+  // fallback is kept for exactly that case rather than removed, so an empty
+  // block still shows real orders instead of an empty table.
+  const recentOrders = useMemo(() => {
+    const apiRecentOrders = data?.recentOrders || [];
+    if (apiRecentOrders.length > 0) {
+      return [...apiRecentOrders]
+        .sort((a, b) => new Date(b?.createdAt) - new Date(a?.createdAt))
+        .slice(0, 8);
+    }
+    return [...allOrders]
+      .filter((o) => o?.createdAt)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 8);
+  }, [data?.recentOrders, allOrders]);
 
-  const avgOrderValue = data.totalOrders > 0 ? data.totalRevenue / data.totalOrders : 0;
+  // The API's own average when it reports one; otherwise the same
+  // revenue ÷ orders this card has always computed.
+  const avgOrderValue =
+    data?.averageOrderValue != null
+      ? Number(data.averageOrderValue)
+      : data.totalOrders > 0
+        ? data.totalRevenue / data.totalOrders
+        : 0;
+
+  // Previous-period movement, rendered in the notes the cards already have.
+  const deltaNotes = data?.deltaNotes || {};
 
   const totalStatusCount = ordersByStatus.reduce((sum, item) => sum + (item?.count ?? 0), 0);
   const pipelineMax = Math.max(...ordersByStatus.map((s) => s?.count ?? 0), 1);
@@ -272,7 +295,7 @@ const DashboardDetail = ({ data }) => {
           displayValue={formatMoney(data.totalRevenue)}
           icon={Wallet}
           tone="emerald"
-          note="total order value"
+          note={deltaNotes.revenue || "total order value"}
           delay={0}
         />
         <KpiCard
@@ -281,7 +304,7 @@ const DashboardDetail = ({ data }) => {
           displayValue={formatCompactNumber(data.totalOrders)}
           icon={ShoppingCart}
           tone="purple"
-          note="in this dataset"
+          note={deltaNotes.orders || "in this dataset"}
           delay={40}
         />
         <KpiCard
@@ -290,7 +313,7 @@ const DashboardDetail = ({ data }) => {
           displayValue={formatMoney(avgOrderValue)}
           icon={TrendingUp}
           tone="blue"
-          note="revenue ÷ orders"
+          note={deltaNotes.averageOrderValue || "revenue ÷ orders"}
           delay={80}
         />
         <KpiCard
@@ -299,7 +322,7 @@ const DashboardDetail = ({ data }) => {
           displayValue={formatCompactNumber(data.pendingOrders)}
           icon={Clock}
           tone="amber"
-          note={`of ${data.totalOrders} orders`}
+          note={deltaNotes.pendingOrders || `of ${data.totalOrders} orders`}
           delay={120}
         />
         <KpiCard
@@ -316,7 +339,7 @@ const DashboardDetail = ({ data }) => {
       {/* TREND + PIPELINE */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <SectionCard title="Recent order trend">
-          <OrderTrendChart orders={recentOrders} />
+          <OrderTrendChart trend={data?.revenueTrend} orders={recentOrders} />
         </SectionCard>
 
         <SectionCard

@@ -10,6 +10,14 @@
 // variant vocabulary and match the reference variant-editor HTML exactly.
 import { useEffect, useState } from "react";
 import { Boxes } from "lucide-react";
+import { toast } from "react-hot-toast";
+import {
+  findExistingVariantForStep,
+  baseQty,
+  // Aliased: this component takes a `unitFamily` PROP, which would otherwise
+  // shadow the helper and turn these calls into "string is not a function".
+  unitFamily as unitFamilyOf,
+} from "../../utils/variantSizeSystems";
 import VariantRow from "./VariantRow";
 import VariantLadderEditor from "./VariantLadderEditor";
 
@@ -36,8 +44,31 @@ const ProductVariantEditor = ({
       variants.filter((_, i) => i !== index),
     );
 
+  // Add Product stages variants locally and POSTs them only after the
+  // product exists, so the same duplicate guard Edit Product applies before
+  // its POST has to apply here before staging — otherwise a duplicate would
+  // simply be created later instead of now.
   const handleAddBatch = (additions) => {
-    onChange(activeUnitFamily, [...variants, ...additions]);
+    const kept = [];
+    const skipped = [];
+    additions.forEach((v) => {
+      const clash =
+        !!findExistingVariantForStep(variants, v.qty, v.unit) ||
+        kept.some(
+          (k) =>
+            baseQty(k.qty, k.unit) === baseQty(v.qty, v.unit) &&
+            unitFamilyOf(k.unit) === unitFamilyOf(v.unit),
+        );
+      if (clash) skipped.push(v);
+      else kept.push(v);
+    });
+    if (skipped.length > 0) {
+      toast.error(
+        `${skipped.map((v) => v.label).join(", ")} already added to this product`,
+      );
+    }
+    if (kept.length === 0) return false;
+    onChange(activeUnitFamily, [...variants, ...kept]);
     return true;
   };
 

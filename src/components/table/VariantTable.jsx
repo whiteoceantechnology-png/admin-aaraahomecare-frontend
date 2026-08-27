@@ -16,6 +16,10 @@ import Pagination from "../common/Pagination";
 import CommonTable from "../common/CommonTable";
 import CategoryFilterDropdown from "../common/CategoryFilterDropdown";
 import {
+  productStockPool,
+  availableUnitsFromPool,
+} from "../../utils/sharedStock";
+import {
   FILTER_SEARCH_ICON_WRAP_CLASS,
   FILTER_SEARCH_INPUT_CLASS,
   FILTER_SELECT_CLASS,
@@ -30,6 +34,13 @@ import {
 const SEARCH_WRAP_CLASS = "relative w-[225px] shrink-0";
 
 const hasValue = (v) => v !== null && v !== undefined;
+
+// A derived variant figure counts SELLABLE UNITS, never the stock unit: 117
+// against a 25 ml variant means 117 bottles of 25 ml, not 117 ml. The suffix
+// is what stops that being misread, and it is the same word whatever the
+// product is measured in — ml, g, kg or pieces all divide down to a count of
+// things you can ship.
+const fmtUnits = (n) => `${Number(n).toLocaleString("en-IN")} ${Number(n) === 1 ? "unit" : "units"}`;
 
 const fmtPrice = (n) =>
   Number(n ?? 0).toLocaleString("en-IN", {
@@ -99,24 +110,37 @@ const VariantTable = ({
     productGroups.get(productKey).variants.push(item);
   });
   productGroups.forEach((group) => {
-    const totalStock = group.variants.every((item) =>
-      hasValue(item?.stockQuantity),
-    )
-      ? group.variants.reduce(
-          (sum, item) => sum + Number(item.stockQuantity),
-          0,
-        )
-      : null;
-    const totalReserved = group.variants.every((item) =>
-      hasValue(reservedOf(item)),
-    )
-      ? group.variants.reduce((sum, item) => sum + Number(reservedOf(item)), 0)
-      : null;
-    const totalAvailable = group.variants.every(
-      (item) => availableOf(item) != null,
-    )
-      ? group.variants.reduce((sum, item) => sum + Number(availableOf(item)), 0)
-      : null;
+    // The product's stock is one shared pool (e.g. 2925 ML) that the API
+    // repeats on every variant row. Summing it across variants multiplies one
+    // pool by the variant count — 2925 x 6 = 17,550 — which is why the
+    // product row shows the pool itself and each variant row shows how many
+    // whole units of ITS OWN size that pool can fill.
+    const pool = productStockPool(group.product, group.variants);
+
+    // Only meaningful without a shared pool: with one, "reserved units"
+    // differ per size and cannot be added across sizes.
+    const totalStock =
+      pool || !group.variants.every((item) => hasValue(item?.stockQuantity))
+        ? null
+        : group.variants.reduce(
+            (sum, item) => sum + Number(item.stockQuantity),
+            0,
+          );
+    const totalReserved =
+      pool || !group.variants.every((item) => hasValue(reservedOf(item)))
+        ? null
+        : group.variants.reduce(
+            (sum, item) => sum + Number(reservedOf(item)),
+            0,
+          );
+    const totalAvailable =
+      pool || !group.variants.every((item) => availableOf(item) != null)
+        ? null
+        : group.variants.reduce(
+            (sum, item) => sum + Number(availableOf(item)),
+            0,
+          );
+
     groupedRows.push({
       ...group.product,
       id: `product-${group.productKey}`,
@@ -124,6 +148,7 @@ const VariantTable = ({
       productKey: group.productKey,
       variantCount: group.variants.length,
       inventoryId: group.product.id,
+      stockPool: pool,
       stockQuantity: totalStock,
       reservedQuantity: totalReserved,
       availableQuantity: totalAvailable,
@@ -135,6 +160,10 @@ const VariantTable = ({
           ...variant,
           rowType: "variant",
           parentProductKey: group.productKey,
+          stockPool: pool,
+          // floor(pool / this variant's size); null when there is no pool, so
+          // the row falls back to whatever the API gave it.
+          derivedUnits: availableUnitsFromPool(pool, variant?.variantName),
         }),
       );
     }
@@ -231,11 +260,22 @@ const VariantTable = ({
     {
       key: "stockQuantity",
       header: "On hand",
-      width: "90px",
+      width: "110px",
       align: "right",
       className: "text-[var(--mk-ink-700)] tabular-nums",
-      render: (item) =>
-        hasValue(item?.stockQuantity) ? item.stockQuantity : "—",
+      render: (item) => {
+        // Product row: the pool exactly as stocked, with its unit ("2,925 ML")
+        // — never a sum across variants.
+        if (item.rowType === "product") {
+          if (item.stockPool) return item.stockPool.label;
+          return hasValue(item?.stockQuantity) ? item.stockQuantity : "—";
+        }
+        // Variant row: whole units of this size the pool can fill.
+        if (item.derivedUnits != null) return fmtUnits(item.derivedUnits);
+        // Not derived from a pool — this is whatever the API sent, so it is
+        // left exactly as it came rather than relabelled as units.
+        return hasValue(item?.stockQuantity) ? item.stockQuantity : "—";
+      },
     },
     {
       key: "reservedQuantity",
@@ -244,6 +284,10 @@ const VariantTable = ({
       align: "right",
       className: "text-[var(--mk-ink-700)] tabular-nums",
       render: (item) => {
+        // A shared pool has no product-level reserved figure: reservations are
+        // counted in units, and units differ per variant size, so adding them
+        // across sizes would be meaningless.
+        if (item.rowType === "product" && item.stockPool) return "—";
         const reserved = reservedOf(item);
         return hasValue(reserved) ? reserved : "—";
       },
@@ -251,21 +295,45 @@ const VariantTable = ({
     {
       key: "available",
       header: "Available",
-      width: "100px",
+      width: "116px",
       align: "right",
       render: (item) => {
-        const avail = availableOf(item);
+        // Product row: the stock actually remaining, in the base stock unit
+        // ("2,975 ML") — the same figure On hand shows, because a shared pool
+        // has nothing reserved against it at product level. Every variant row
+        // below divides THIS number. No low-stock icon here: that threshold
+        // counts units, and 10 ML means something quite different from 10
+        // bottles.
+        if (item.rowType === "product" && item.stockPool)
+          return (
+            <span className="text-[var(--mk-ink-700)] font-medium tabular-nums">
+              {item.stockPool.label}
+            </span>
+          );
+        // Derived units, less anything reserved against that variant.
+        let avail = availableOf(item);
+        // Only a pool-derived figure is a unit count; an API-supplied one is
+        // shown as it arrived.
+        let derived = false;
+        if (item.derivedUnits != null) {
+          const reserved = reservedOf(item);
+          avail = hasValue(reserved)
+            ? Math.max(0, item.derivedUnits - Number(reserved))
+            : item.derivedUnits;
+          derived = true;
+        }
         const isLow = avail != null && avail <= 10;
         if (avail == null)
           return <span className="text-[var(--mk-ink-400)]">—</span>;
+        const shown = derived ? fmtUnits(avail) : avail;
         return isLow ? (
           <span className="inline-flex items-center gap-1 text-[var(--mk-warn)] font-semibold tabular-nums">
             <AlertTriangle size={13} />
-            {avail}
+            {shown}
           </span>
         ) : (
           <span className="text-[var(--mk-ink-700)] font-medium tabular-nums">
-            {avail}
+            {shown}
           </span>
         );
       },

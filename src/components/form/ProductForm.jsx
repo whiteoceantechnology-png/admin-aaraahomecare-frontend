@@ -181,7 +181,7 @@ const ProductForm = ({ onSubmit, onCancel, defaultValues = {}, loading = false }
         </div>
 
         {/* ACTUAL PRICE */}
-        <div className="flex flex-col">
+        {/* <div className="flex flex-col">
           <label className="text-[14px] font-medium text-gray-700 mb-1">
             Actual Price
           </label>
@@ -199,10 +199,10 @@ const ProductForm = ({ onSubmit, onCancel, defaultValues = {}, loading = false }
               {errors.actualPrice.message}
             </p>
           )}
-        </div>
+        </div> */}
 
         {/* DISCOUNT PRICE */}
-        <div className="flex flex-col">
+        {/* <div className="flex flex-col">
           <label className="text-[14px] font-medium text-gray-700 mb-1">
             Discount Price
           </label>
@@ -220,7 +220,7 @@ const ProductForm = ({ onSubmit, onCancel, defaultValues = {}, loading = false }
               {errors.discountPrice.message}
             </p>
           )}
-        </div>
+        </div> */}
       </div>
 
       {/* DESCRIPTION */}
