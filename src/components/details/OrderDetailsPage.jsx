@@ -496,11 +496,11 @@ const OrderDetailsPage = () => {
                         {item.productName}
                       </p>
                       <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                        {item.sizeLabel && (
+                        {/* {item.sizeLabel && (
                           <span className="px-2 py-0.5 rounded-full bg-gray-100 text-[11px] font-medium text-gray-600">
                             {item.sizeLabel}
                           </span>
-                        )}
+                        )} */}
                         {item.variant?.sku && (
                           <span className="text-[11px] text-gray-400">
                             SKU: {item.variant.sku}

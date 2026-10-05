@@ -280,7 +280,6 @@ const logisticsSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      /* OVERVIEW */
       .addCase(getLogisticsOverview.pending, (state) => {
         state.overview.loading = true;
         state.overview.error = null;

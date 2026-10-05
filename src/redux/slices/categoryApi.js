@@ -2,6 +2,11 @@ import api from "../../utils/api";
 
 export const fetchCategories = () => api.get("/admin/categories");
 
+// One category WITH the products that belong to it — the only endpoint in
+// this app that exposes the category-to-product relationship. Inventory uses
+// it to work out which products a selected category contains.
+export const fetchCategoryById = (id) => api.get(`/admin/categories/${id}`);
+
 export const createCategory = (payload) =>
   api.post("/admin/categories", payload, {
     headers: { "Content-Type": "application/json" },

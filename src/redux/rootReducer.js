@@ -24,6 +24,7 @@ import orderReducer from "./slices/orderSlice";
 import inventoryReducer from "./slices/inventorySlice";
 import paymentReducer from "./slices/paymentSlice";
 import logisticsReducer from "./slices/logisticsSlice";
+import courierReducer from "./slices/courierSlice";
 
 const rootReducer = combineReducers({
   admin: adminReducer,
@@ -49,6 +50,7 @@ const rootReducer = combineReducers({
   inventory: inventoryReducer,
   payment: paymentReducer,
   logistics: logisticsReducer,
+  courier: courierReducer,
 });
 
 export default rootReducer;

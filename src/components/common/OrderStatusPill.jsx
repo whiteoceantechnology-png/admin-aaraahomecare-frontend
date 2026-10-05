@@ -5,6 +5,7 @@
 const TONE_BY_STATUS = {
   paid: "bg-[var(--mk-ok-bg)] text-[var(--mk-ok)]",
   delivered: "bg-[var(--mk-ok-bg)] text-[var(--mk-ok)]",
+  completed: "bg-[var(--mk-ok-bg)] text-[var(--mk-ok)]",
 
   pending: "bg-[var(--mk-warn-bg)] text-[var(--mk-warn)]",
   pending_payment: "bg-[var(--mk-warn-bg)] text-[var(--mk-warn)]",

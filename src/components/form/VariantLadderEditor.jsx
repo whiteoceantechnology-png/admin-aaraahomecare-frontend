@@ -27,6 +27,7 @@ import {
   validatePrice,
   validateOfferPrice,
 } from "../../utils/variantSizeSystems";
+import { variantUnitOptionsForFamily } from "../../config/stockUnits";
 
 const stepKey = (qty, unit) => `${qty}-${unit}`;
 const normalize = (s) => (s || "").toString().trim().toLowerCase();
@@ -122,6 +123,16 @@ const VariantLadderEditor = ({
         ? SIZE_SYSTEMS.PACK
         : mlSystem;
 
+  // The custom-size Unit dropdown's options. Derived from the shared Stock
+  // Unit enumeration for the active family, so the weight family offers BOTH
+  // g and kg; sizeSystem.units is passed only to keep units that have no
+  // Stock Unit equivalent ("pack"). Reading sizeSystem.units alone was the
+  // bug: BULK_KG declares ["kg"], so the dropdown had a single option.
+  const unitOptions = variantUnitOptionsForFamily(
+    activeUnitFamily,
+    sizeSystem.units,
+  );
+
   const effectiveExistingLabels = existingVariants
     ? ladderVariants.map((v) => v.variantName)
     : existingLabels;
@@ -155,7 +166,7 @@ const VariantLadderEditor = ({
 
   const [customOpen, setCustomOpen] = useState(false);
   const [cQty, setCQty] = useState("");
-  const [cUnit, setCUnit] = useState(sizeSystem.units[0] || "g");
+  const [cUnit, setCUnit] = useState(unitOptions[0] || "g");
   const [cPrice, setCPrice] = useState("");
   const [cOffer, setCOffer] = useState("");
   const [submittingCustom, setSubmittingCustom] = useState(false);
@@ -185,7 +196,7 @@ const VariantLadderEditor = ({
       };
     });
     setLadderInputs(seed);
-    setCUnit(sizeSystem.units[0] || "g");
+    setCUnit(unitOptions[0] || "g");
     if (!gstDefaultSetRef.current && hasRealVariants) {
       setGstInclusive(false);
       gstDefaultSetRef.current = true;
@@ -225,6 +236,15 @@ const VariantLadderEditor = ({
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inferredSystem.key, hasRealVariants, categoryName]);
+
+  // Keep the selected unit inside the active family. Without this, switching
+  // the KG/ML/UNIT toggle leaves e.g. "g" selected on the ML tab, where the
+  // <select> matches no <option>: it renders BLANK and still submits the
+  // stale unit — the identical failure the Stock Unit field had.
+  useEffect(() => {
+    if (!unitOptions.includes(cUnit)) setCUnit(unitOptions[0] || "g");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unitOptions.join("|")]);
 
   const updateLadderInput = (qty, unit, patch) => {
     setLadderInputs((prev) => ({
@@ -615,7 +635,7 @@ const VariantLadderEditor = ({
                   onChange={(e) => setCUnit(e.target.value)}
                   className={fldClass(false)}
                 >
-                  {sizeSystem.units.map((u) => (
+                  {unitOptions.map((u) => (
                     <option key={u} value={u}>
                       {u}
                     </option>

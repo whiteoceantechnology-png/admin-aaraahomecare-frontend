@@ -33,3 +33,37 @@ export const numberToWordsINR = (amount) => {
 
   return `${parts.join(" ")} Rupees Only`;
 };
+
+// The invoice's words lines, which include paise and use a different tail
+// from numberToWordsINR above:
+//
+//   1.10 -> "One and Ten Paise Only"      (reference: "Indian Rupee One and Ten Paise Only")
+//   0.00 -> "Zero Only"                   (reference: "Indian Rupee Zero Only")
+//   220  -> "Two Hundred Twenty Only"
+//
+// numberToWordsINR is left exactly as it was — it rounds to whole rupees and
+// ends "Rupees Only", which is the right convention for its own callers but
+// prints "One Rupees Only" for ₹1.10. The caller prefixes "Indian Rupee".
+export const amountInWordsINR = (amount) => {
+  const value = Math.abs(Number(amount) || 0);
+  // Work in paise so 1.10 can't arrive as 1.0999999999999999.
+  const totalPaise = Math.round(value * 100);
+  const rupees = Math.floor(totalPaise / 100);
+  const paise = totalPaise % 100;
+
+  const crore = Math.floor(rupees / 10000000);
+  const lakh = Math.floor((rupees % 10000000) / 100000);
+  const thousand = Math.floor((rupees % 100000) / 1000);
+  const hundred = rupees % 1000;
+
+  const parts = [];
+  if (crore) parts.push(`${threeDigits(crore)} Crore`);
+  if (lakh) parts.push(`${threeDigits(lakh)} Lakh`);
+  if (thousand) parts.push(`${threeDigits(thousand)} Thousand`);
+  if (hundred) parts.push(threeDigits(hundred));
+
+  const rupeeWords = parts.length ? parts.join(" ") : "Zero";
+  return paise
+    ? `${rupeeWords} and ${twoDigits(paise)} Paise Only`
+    : `${rupeeWords} Only`;
+};

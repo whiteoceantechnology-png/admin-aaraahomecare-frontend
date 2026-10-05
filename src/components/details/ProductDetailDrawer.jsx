@@ -51,6 +51,11 @@ import Modal from "../common/Modal";
 import IconButton from "../common/IconButton";
 import ImageEditorModal from "../common/ImageEditorModal";
 import RichTextEditor from "../common/RichTextEditor";
+import {
+  STOCK_UNIT_OPTIONS,
+  canonicalStockUnit,
+  unitFamilyForStockUnit,
+} from "../../config/stockUnits";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
 import VariantLadderEditor from "../form/VariantLadderEditor";
 import ProductVariantEditor from "../form/ProductVariantEditor";
@@ -134,9 +139,9 @@ const categoryGstPercent = (category) => {
   return Number.isNaN(value) ? null : value;
 };
 
-const STOCK_UNIT_OPTIONS = ["KG", "G", "L", "ML", "UNIT"];
-const unitFamilyForStockUnit = (unit) =>
-  unit === "UNIT" ? "unit" : unit === "ML" || unit === "L" ? "ml" : "kg";
+// The Stock Unit enumeration and its helpers now live in config/stockUnits.js
+// so the variant editor's Unit dropdown can be built from the SAME list
+// instead of its own — see that file's header for the bug that caused.
 
 const formatBytes = (bytes) => {
   const kb = bytes / 1024;
@@ -160,6 +165,21 @@ const fldClass = (hasError) =>
       ? "border-[var(--mk-dgr)] focus:ring-2 focus:ring-[var(--mk-dgr)]/15"
       : "border-[var(--mk-line)] focus:ring-2 focus:ring-[var(--mk-primary-ring)] focus:border-[var(--mk-primary)]"
   }`;
+
+// The same visual language as fldClass, minus its fixed h-10 — a textarea is
+// sized by its content, not locked to one input's height.
+const taClass = (hasError) =>
+  `w-full px-[12px] py-[9px] rounded-lg border text-[14px] font-medium leading-[1.45] text-[var(--mk-ink-900)] placeholder:text-[var(--mk-ink-400)] bg-white outline-none resize-y transition-colors ${
+    hasError
+      ? "border-[var(--mk-dgr)] focus:ring-2 focus:ring-[var(--mk-dgr)]/15"
+      : "border-[var(--mk-line)] focus:ring-2 focus:ring-[var(--mk-primary-ring)] focus:border-[var(--mk-primary)]"
+  }`;
+
+// SEO meta description cap. Search engines truncate around this length, so
+// the limit is enforced in three places that must agree: the textarea's own
+// maxLength (blocks typing and paste), the react-hook-form rule (backstop for
+// a programmatic setValue), and the live counter below.
+const META_DESCRIPTION_MAX = 160;
 
 const Field = ({ label, help, error, children }) => (
   <div className="flex flex-col gap-1.5 mb-3.5">
@@ -290,7 +310,30 @@ const ProductDetailDrawer = ({
   const watchedCategoryId = watch("categoryId");
   const watchedTaxPercent = watch("taxPercent");
   const watchedStockUnit = watch("stockUnit") || "KG";
+  // Drives the "52/160" counter. Coerced to a string because the field is
+  // undefined before the first reset() and the API may send null for it —
+  // neither has a .length.
+  const metaDescriptionLength = String(watch("metaDescription") ?? "").length;
   const selectedUnitFamily = unitFamilyForStockUnit(watchedStockUnit);
+  // The standard units, plus the product's own if the API stores something
+  // outside that list — without this the select would be blank again for it,
+  // and saving would clear it.
+  //
+  // Derived from the PRODUCT, not just the watched form value: reset() assigns
+  // the select its value in an effect, i.e. after the render that builds these
+  // options. Sourcing the extra option from the watched value alone meant it
+  // did not exist yet at that moment, so the select fell back to showing the
+  // first option (KG) while the form still held the real unit — displaying one
+  // unit and saving another.
+  const storedStockUnit = canonicalStockUnit(
+    product?.stockUnit ?? product?.stock_unit,
+  );
+  const stockUnitOptions = [
+    ...STOCK_UNIT_OPTIONS,
+    ...[storedStockUnit, watchedStockUnit].filter(
+      (u) => u && !STOCK_UNIT_OPTIONS.includes(u),
+    ),
+  ].filter((u, i, all) => all.indexOf(u) === i);
   const watchedCategoryName = allCategoryList.find(
     (c) => String(c.id) === String(watchedCategoryId),
   )?.name;
@@ -331,6 +374,7 @@ const ProductDetailDrawer = ({
         stock: "",
         stockUnit: "KG",
         description: "",
+        metaDescription: "",
       });
       setImagePaths([]);
       setStagedVariantsByUnit({ kg: [], ml: [], unit: [] });
@@ -358,8 +402,14 @@ const ProductDetailDrawer = ({
         actualPrice: product.actualPrice ?? "",
         discountPrice: product.discountPrice ?? "",
         stock: product.stock ?? product.quantity ?? "",
-        stockUnit: product.stockUnit ?? product.stock_unit ?? "KG",
+        stockUnit:
+          canonicalStockUnit(product.stockUnit ?? product.stock_unit) || "KG",
         description: product.description ?? "",
+        // A null/absent metaDescription becomes an empty field reading 0/160.
+        // Deliberately NOT defaulted to product.description — the SEO blurb
+        // is authored separately and silently copying the rich-text body in
+        // would publish markup as a meta tag.
+        metaDescription: product.metaDescription ?? "",
       });
       setImagePaths(normalizeProductImages(product.productImage));
       // Deep-copied into fresh local objects — these came straight off the
@@ -701,6 +751,10 @@ const ProductDetailDrawer = ({
       brandId: Number(data.brandId),
       name: data.name,
       description: data.description,
+      // Empty is a legitimate value, sent as null to match how the API
+      // itself represents "unset" for this field (same convention as
+      // stockUnit below) rather than inventing an empty string.
+      metaDescription: (data.metaDescription ?? "").trim() || null,
       hsnCode: data.hsnCode,
       taxId,
       taxPercent: Number(data.taxPercent),
@@ -708,7 +762,9 @@ const ProductDetailDrawer = ({
       discountPrice: Number(data.discountPrice),
       productImage: imagePaths,
       stock: Number(data.stock),
-      stockUnit: data.stockUnit || null,
+      // Canonicalised on the way out too, so a save always stores one of the
+      // known option values rather than whatever casing arrived.
+      stockUnit: canonicalStockUnit(data.stockUnit) || null,
     };
 
     setSaving(true);
@@ -1087,14 +1143,14 @@ const ProductDetailDrawer = ({
           <p className="text-[13px] text-[var(--mk-ink-400)]">Loading…</p>
         ) : (
           <form id={FORM_ID} onSubmit={handleSubmit(onFormSubmit)}>
-            {flags.length > 0 && (
+            {/* {flags.length > 0 && (
               <div className="flex items-center gap-2 px-[12px] py-2.5 rounded-[10px] bg-[var(--mk-warn-bg)] border border-[#F2D9B8] text-[#7A3A08] text-[12.5px] leading-[1.4] mb-[16px]">
                 <AlertTriangle size={15} className="shrink-0" />
                 <div>
                   <b>Data health:</b> {flags.map((f) => f.label).join(" · ")}.
                 </div>
               </div>
-            )}
+            )} */}
 
             {/* PRODUCT INFORMATION — Product name/Category, then GST slab/HSN
                 code, matching the reference's exact field pairing. GST slab
@@ -1227,7 +1283,7 @@ const ProductDetailDrawer = ({
                   className={fldClass(errors.stockUnit)}
                   defaultValue="KG"
                 >
-                  {STOCK_UNIT_OPTIONS.map((unit) => (
+                  {stockUnitOptions.map((unit) => (
                     <option key={unit} value={unit}>
                       {unit}
                     </option>
@@ -1249,6 +1305,33 @@ const ProductDetailDrawer = ({
                   />
                 )}
               />
+            </Field>
+
+            {/* META DESCRIPTION — SEO text only, entirely separate from the
+                rich-text Description above: plain characters, hard-capped,
+                and never auto-filled from that field. */}
+            <Field
+              label="Meta Description"
+              error={errors.metaDescription?.message}
+            >
+              <textarea
+                rows={3}
+                maxLength={META_DESCRIPTION_MAX}
+                placeholder="Short SEO summary shown in search results"
+                {...register("metaDescription", {
+                  maxLength: {
+                    value: META_DESCRIPTION_MAX,
+                    message: `Meta description cannot exceed ${META_DESCRIPTION_MAX} characters`,
+                  },
+                })}
+                className={taClass(errors.metaDescription)}
+              />
+              <span
+                className="self-end text-[11.5px] font-medium tabular-nums text-[var(--mk-ink-400)]"
+                aria-live="polite"
+              >
+                {metaDescriptionLength}/{META_DESCRIPTION_MAX}
+              </span>
             </Field>
 
             {/* IMAGES */}

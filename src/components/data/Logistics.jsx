@@ -15,6 +15,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { toast } from "react-hot-toast";
 import { Download, Truck, Info, AlertTriangle, Plus } from "lucide-react";
 import Drawer from "../common/Drawer";
+import CourierVendors from "./CourierVendors";
 import Modal from "../common/Modal";
 import {
   Pill, Chip, Banner, Card, PanelHead, Kpi, TableShell, Td,
@@ -118,7 +119,7 @@ const Logistics = () => {
   const dispatch = useDispatch();
   const {
     overview, readyToShip, shipments, shipmentDetail, tracking, booking,
-    ndr, ndrActionLoading, rto, rtoActionLoading, rates, config, recharging,
+    ndr, ndrActionLoading, rto, rtoActionLoading, config, recharging,
   } = useSelector((state) => state.logistics);
 
   const [tab, setTab] = useState("overview");
@@ -131,8 +132,7 @@ const Logistics = () => {
   const [shQ, setShQ] = useState("");
   const [shSt, setShSt] = useState("");
 
-  const [cfgZone, setCfgZone] = useState("B");
-  const [cfgWeight, setCfgWeight] = useState(0.5);
+
 
   const ov = overview.data;
   const cfg = config.data;
@@ -158,10 +158,6 @@ const Logistics = () => {
   useEffect(() => {
     if (tab === "rto") dispatch(getRtoList({ page: 1, limit: LIST_LIMIT }));
   }, [dispatch, tab]);
-
-  useEffect(() => {
-    if (tab === "config") dispatch(getRates({ zone: cfgZone, weightKg: cfgWeight }));
-  }, [dispatch, tab, cfgZone, cfgWeight]);
 
   useEffect(() => {
     if (openRow?.awb) {
@@ -533,38 +529,10 @@ const Logistics = () => {
       {/* RATES & CONFIG */}
       {tab === "config" && (
         <div className="grid grid-cols-2 gap-3.5 items-start max-[1080px]:grid-cols-1">
-          <Card>
-            <PanelHead sub={`zone ${cfgZone} · ${cfgWeight}kg — live rate card`}>Rate card</PanelHead>
-            <div className="flex gap-2.5 px-[18px] py-[12px] border-b border-[var(--mk-line)] items-end flex-wrap">
-              <Fld label="Zone">
-                <Sel value={cfgZone} onChange={(e) => setCfgZone(e.target.value)}>
-                  {ZONE_LIST.map((z) => <option key={z} value={z}>{z}</option>)}
-                </Sel>
-              </Fld>
-              <Fld label="Weight (kg)">
-                <input type="number" min="0.1" step="0.1" value={cfgWeight} onChange={(e) => setCfgWeight(Math.max(0.1, Number(e.target.value) || 0.1))} className={fldClass(false)} />
-              </Fld>
-            </div>
-            {rates.loading ? (
-              <div className="py-14 text-center text-[13px] text-[var(--mk-ink-400)]">Loading rates…</div>
-            ) : (
-              <TableShell head={[{ label: "Courier" }, { label: "Rate", num: true }, { label: "ETA", num: true }]}>
-                {rates.items.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="py-14 text-center text-[13px] text-[var(--mk-ink-400)]">No rates for this zone/weight</td>
-                  </tr>
-                ) : (
-                  rates.items.map((c) => (
-                    <tr key={c.id}>
-                      <Td className="font-semibold text-[12.5px] text-[var(--mk-ink-900)]">{c.name}</Td>
-                      <Td num>{fmt(c.rate)}</Td>
-                      <Td num>{c.etaDays != null ? `${c.etaDays}d` : "—"}</Td>
-                    </tr>
-                  ))
-                )}
-              </TableShell>
-            )}
-          </Card>
+          {/* Courier vendors replaces the old zone/weight rate card here.
+              GET /admin/logistics/rates is untouched — the Book Shipment
+              modal still prices bookings with it. */}
+          <CourierVendors />
           <div className="flex flex-col gap-3.5">
             <Card>
               <PanelHead>Aggregator wallet</PanelHead>
@@ -583,7 +551,7 @@ const Logistics = () => {
               </div>
             </Card>
             <Card>
-              <PanelHead sub="from GET /admin/logistics/config">Booking config</PanelHead>
+              <PanelHead sub="">Booking config</PanelHead>
               <div className="px-[18px] py-4 text-[12.5px] text-[var(--mk-ink-700)] flex flex-col gap-2.5">
                 <div className="flex justify-between"><span>Default courier</span><span className="font-semibold text-[var(--mk-ink-900)]">{cfg?.defaultCourier || "—"}</span></div>
                 <div className="flex justify-between"><span>Auto NDR reattempt limit</span><span className="font-semibold text-[var(--mk-ink-900)]">{cfg?.autoNdrReattemptLimit ?? "—"}</span></div>

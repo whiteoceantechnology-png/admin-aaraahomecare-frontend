@@ -26,6 +26,7 @@ import Modal from "../common/Modal";
 import EmptyState from "../common/EmptyState";
 import MkPill from "../common/MkPill";
 import { formatDateTime } from "../../utils/formatDate";
+import { formatStock, stockUnitOf } from "../../utils/sharedStock";
 
 const hasValue = (v) => v !== null && v !== undefined;
 
@@ -151,6 +152,8 @@ const InventoryDetailDrawer = ({ productId, open, onClose, onMutated }) => {
     : onHand != null && reserved != null
       ? onHand - reserved
       : null;
+  // The unit the API reported this stock in — never hardcoded.
+  const unit = stockUnitOf(item);
   const isLow = avail != null && avail <= 10;
 
   const sellPrice = hasValue(item?.discountPrice)
@@ -276,12 +279,16 @@ const InventoryDetailDrawer = ({ productId, open, onClose, onMutated }) => {
             <div
               className={`grid grid-cols-3 gap-2.5 ${isLow ? "mb-2.5" : ""}`}
             >
-              <StatCard icon={Boxes} label="On hand" value={onHand} />
+              <StatCard
+                icon={Boxes}
+                label="On hand"
+                value={onHand == null ? null : formatStock(onHand, unit)}
+              />
               <StatCard icon={Lock} label="Reserved" value={reserved} />
               <StatCard
                 icon={PackageCheck}
                 label="Available"
-                value={avail}
+                value={avail == null ? null : formatStock(avail, unit)}
                 tone={isLow ? "warn" : "ok"}
               />
             </div>

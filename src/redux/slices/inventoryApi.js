@@ -1,6 +1,10 @@
 import api from "../../utils/api";
 
-export const fetchInventoryList = (params = {}) => api.get("/admin/inventory", { params });
+// `config` carries the AbortSignal, so a request superseded by a newer one
+// (the admin changing category mid-flight) is cancelled rather than left to
+// land late and overwrite the newer response.
+export const fetchInventoryList = (params = {}, config = {}) =>
+  api.get("/admin/inventory", { params, ...config });
 
 export const fetchLowStockInventory = (params = {}) => api.get("/admin/inventory/low-stock", { params });
 

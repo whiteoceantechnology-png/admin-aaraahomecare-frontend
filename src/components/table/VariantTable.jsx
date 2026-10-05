@@ -18,6 +18,8 @@ import CategoryFilterDropdown from "../common/CategoryFilterDropdown";
 import {
   productStockPool,
   availableUnitsFromPool,
+  formatStock,
+  stockUnitOf,
 } from "../../utils/sharedStock";
 import {
   FILTER_SEARCH_ICON_WRAP_CLASS,
@@ -119,8 +121,16 @@ const VariantTable = ({
 
     // Only meaningful without a shared pool: with one, "reserved units"
     // differ per size and cannot be added across sizes.
+    // Adding quantities only makes sense when every row is measured the same
+    // way: 500 g + 2 L is not 502 of anything. Mixed units show "—" and the
+    // real figures stay on the variant rows.
+    const groupUnits = new Set(
+      group.variants.map((item) => String(stockUnitOf(item) ?? "").toLowerCase()),
+    );
     const totalStock =
-      pool || !group.variants.every((item) => hasValue(item?.stockQuantity))
+      pool ||
+      groupUnits.size > 1 ||
+      !group.variants.every((item) => hasValue(item?.stockQuantity))
         ? null
         : group.variants.reduce(
             (sum, item) => sum + Number(item.stockQuantity),
@@ -268,13 +278,17 @@ const VariantTable = ({
         // — never a sum across variants.
         if (item.rowType === "product") {
           if (item.stockPool) return item.stockPool.label;
-          return hasValue(item?.stockQuantity) ? item.stockQuantity : "—";
+          return hasValue(item?.stockQuantity)
+            ? formatStock(item.stockQuantity, stockUnitOf(item))
+            : "—";
         }
         // Variant row: whole units of this size the pool can fill.
         if (item.derivedUnits != null) return fmtUnits(item.derivedUnits);
-        // Not derived from a pool — this is whatever the API sent, so it is
-        // left exactly as it came rather than relabelled as units.
-        return hasValue(item?.stockQuantity) ? item.stockQuantity : "—";
+        // Not derived from a pool — the API's own quantity, shown in the API's
+        // own stock unit.
+        return hasValue(item?.stockQuantity)
+          ? formatStock(item.stockQuantity, stockUnitOf(item))
+          : "—";
       },
     },
     {
@@ -325,7 +339,9 @@ const VariantTable = ({
         const isLow = avail != null && avail <= 10;
         if (avail == null)
           return <span className="text-[var(--mk-ink-400)]">—</span>;
-        const shown = derived ? fmtUnits(avail) : avail;
+        // A pool-derived figure is a count of sellable units; an
+        // API-supplied one is a stock quantity, so it carries the stock unit.
+        const shown = derived ? fmtUnits(avail) : formatStock(avail, stockUnitOf(item));
         return isLow ? (
           <span className="inline-flex items-center gap-1 text-[var(--mk-warn)] font-semibold tabular-nums">
             <AlertTriangle size={13} />

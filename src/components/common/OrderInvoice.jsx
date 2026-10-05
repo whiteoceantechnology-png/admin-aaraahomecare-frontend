@@ -1,37 +1,54 @@
-// A4 tax-invoice template — structure, spacing and typography follow the
-// approved reference PDF (a real tax invoice) exactly: bordered page frame,
-// left company block + right "TAX INVOICE" heading, a labelled invoice-info
-// row, Bill To / Ship To panel, an itemised table with a combined GST column,
-// a totals block with Payment Made / Balance Due, Total in Words, Notes,
-// and Terms & Conditions forced onto their own page. Every VALUE comes from
-// the real order object already loaded by the caller (GET
-// /admin/orders/{id}) — nothing here is invented. Two things are
-// deliberately NOT copied from the reference verbatim:
-//   1. Aaraa's own GSTIN/registered-office address isn't available from any
-//      API this app calls, so — same principle this file has always
-//      followed — that's left out rather than fabricated, instead of
-//      copying the reference's (a different real company's) GSTIN.
-//   2. The reference's Terms & Conditions are a specific supplier's legal
-//      text (their GSTIN, their domain). The topics are adapted here as
-//      generic, non-company-specific clauses in the same numbered
-//      structure — reusing another business's exact legal wording under
-//      Aaraa's name would misrepresent whose terms they are.
-// GST is rendered as one combined value from the order's real tax amount.
-import moment from "moment";
+// A4 tax-invoice template — structure, spacing and typography reproduce the
+// approved reference tax invoice as closely as HTML allows.
+//
+// The reference is NOT one outer bordered frame: it is a sequence of discrete
+// blocks — an unboxed header closed by a rule, then a bordered invoice-info
+// panel, two side-by-side party boxes, the items table, a five-column tax
+// summary, an unboxed words/totals band, and a centred "Page n of 2" footer.
+// Terms and Conditions always occupy page 2 on their own, under a right-
+// aligned signature block.
+//
+// Every VALUE comes from the real order object already loaded by the caller
+// (GET /admin/orders/{id}) — nothing here is invented. The seller block and
+// the ten Terms come from src/config/seller.js and TERMS below: Aaraa's own
+// details and Aaraa's own legal text, as printed on the reference invoice.
+//
+// Printing/pagination is unchanged: InvoiceModal portals this onto <body>
+// and index.css turns each .invoice-sheet into one physical A4 page.
 import logo from "../layout/aaraa_logo.png";
 import { SELLER } from "../../config/seller";
 import { exGstSubtotal, gstPercentFor } from "../../utils/orderTotals";
-import { numberToWordsINR } from "../../utils/numberToWords";
+import { amountInWordsINR } from "../../utils/numberToWords";
 
 const fmtNum = (n) =>
   Number(n ?? 0).toLocaleString("en-IN", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-const fmtRs = (n) => `Rs.${fmtNum(n)}`;
-const fmtDate = (v) => (v ? moment(v).format("DD/MM/YYYY") : "—");
+const fmtRs = (n) => `₹${fmtNum(n)}`;
+const inWords = (n) => `Indian Rupee ${amountInWordsINR(n)}`;
+
+// "17 Sept 2026" — the reference's date format. en-GB is what produces the
+// four-letter "Sept" (en-US gives "Sep"), so the locale is doing real work
+// here and must not be dropped.
+const DATE_FMT = new Intl.DateTimeFormat("en-GB", {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+});
+
+// An em dash is what the reference puts wherever a value does not apply — a
+// zero-rated tax cell shows "—", not "0%" and not "0.00".
+const DASH = "—";
+
+const fmtDate = (v) => {
+  if (!v) return DASH;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? DASH : DATE_FMT.format(d);
+};
+
 // Slab percentages print without trailing zeros, the way the reference
-// invoices label them: 18, 9, 5, 2.5 — never 18.00 or 2.50.
+// labels them: 18, 9, 5, 2.5 — never 18.00 or 2.50.
 const fmtPercent = (n) =>
   Number(n || 0)
     .toFixed(2)
@@ -49,17 +66,6 @@ const normalizeState = (value) =>
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "");
 
-const formatLabel = (status) =>
-  (status || "")
-    .toString()
-    .toLowerCase()
-    .split("_")
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ") || "—";
-
-const PAID_FAMILY = ["paid", "completed", "success"];
-
 // variantId is the source of truth for WHICH variant was ordered; its name is
 // read from the variant record that id points at. Never assembled from
 // packSize (label/size/unit) — pack size describes the packaging, not the
@@ -75,53 +81,35 @@ const variantNameFor = (it, variants) => {
   return it?.sizeLabel || "";
 };
 
-// One labelled row of the invoice-information block, matching the
-// reference's "Label : Value" alignment (label column, colon, value).
+// One "Label : Value" row of the invoice-information panel, with the colon on
+// its own fixed column so every colon lines up exactly as the reference's do.
 const InfoRow = ({ label, value }) => (
-  <div className="flex text-[10.5px] leading-[1.6]">
-    <span className="w-[104px] shrink-0 text-gray-700">{label}</span>
-    <span className="shrink-0 mr-1 text-gray-700">:</span>
-    <span className="font-semibold text-gray-900 break-words">
-      {value || "—"}
-    </span>
+  <div className="flex text-[10.5px] leading-[1.75]">
+    <span className="w-[104px] shrink-0 font-bold text-gray-900">{label}</span>
+    <span className="shrink-0 mr-1 font-bold text-gray-900">:</span>
+    <span className="font-bold text-gray-900 break-words">{value || DASH}</span>
   </div>
 );
 
-// One party panel (Bill To / Ship To). Every line is filtered before it gets
-// here, so a missing address line or GSTIN closes up instead of printing
-// blank.
-const PartyPanel = ({ name, lines, phone, email, gstin }) => (
-  <div className="px-3 py-2.5">
-    <p className="!m-0 text-[12px] font-bold text-gray-900">{name || "—"}</p>
+// One party box (BILL TO / SHIP TO). Lines are filtered before they get here,
+// so a missing address line closes up instead of printing blank.
+const PartyBox = ({ heading, name, lines }) => (
+  <div className="border border-gray-400 px-3 py-2.5">
+    {/* pb-, not mb-: !m-0 (see the note in OrderInvoice below) would zero a
+        margin utility here. */}
+    <p className="!m-0 pb-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+      {heading}
+    </p>
+    <p className="!m-0 text-[11px] font-bold text-gray-900">{name || DASH}</p>
     {lines.map((line, i) => (
-      <p key={i} className="!m-0 text-[10.5px] leading-[1.55] text-gray-700">
+      <p key={i} className="!m-0 text-[10.5px] leading-[1.6] text-gray-800">
         {line}
       </p>
     ))}
-    {gstin && (
-      <p className="!m-0 text-[10.5px] leading-[1.55] text-gray-700">
-        GSTIN {gstin}
-      </p>
-    )}
-    {phone && (
-      <p className="!m-0 text-[10.5px] leading-[1.55] text-gray-700">{phone}</p>
-    )}
-    {email && (
-      <p className="!m-0 text-[10.5px] leading-[1.55] text-gray-700">{email}</p>
-    )}
   </div>
 );
 
-const MetaRow = ({ label, value, bold }) => (
-  <div className="flex text-[11px] leading-[1.5]">
-    <span className="w-[110px] shrink-0 text-gray-700">{label}</span>
-    <span className={`shrink-0 mr-1 text-gray-700`}>:</span>
-    <span className={bold ? "font-semibold text-gray-900" : "text-gray-900"}>
-      {value || "—"}
-    </span>
-  </div>
-);
-
+// The reference's ten terms, verbatim.
 const TERMS = [
   "This supply is governed by Aaraa Homecare's Terms of Service and Returns, Refunds and Cancellations Policy, accepted at the time of order.",
   "Goods are supplied as raw materials/ingredients for further formulation, manufacturing or personal use as described on the product listing.",
@@ -132,63 +120,47 @@ const TERMS = [
   "Goods are not accepted for return except as provided in our Returns, Refunds and Cancellations Policy. Returns on account of change of mind are not accepted.",
   "Our liability is limited to the invoice value of the item concerned. We are not liable for consequential loss, including loss of production, rework, or loss of profit.",
   "Compliance of any finished product made using these goods, including licensing, safety assessment and labelling, is the responsibility of the buyer.",
-  "Subject to the jurisdiction of the courts at the seller's registered location. E. & O.E.",
+  "Subject to Salem Jurisdiction. E. & O.E.",
 ];
+
+// "AARAA HOMECARE" -> "Aaraa Homecare" for the signature line, which the
+// reference sets in title case while the header block is uppercase.
+const titleCaseName = (s) =>
+  (s || "").replace(
+    /\b\w+/g,
+    (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(),
+  );
 
 const OrderInvoice = ({ order, id, variants }) => {
   if (!order) return null;
 
   const items = order.items || [];
+  const address = order.addressSnapshot;
+
+  // GST-INCLUSIVE line total, as stored.
   const subtotal = items.reduce((sum, it) => {
     const fallback = Number(it.price || 0) * Number(it.quantity || 1);
     return sum + (it.subtotal != null ? Number(it.subtotal) : fallback);
   }, 0);
-  const address = order.addressSnapshot;
-  const payments = Array.isArray(order.payments) ? order.payments : [];
-  const paymentMethod = payments[0]?.method || order.paymentMethod;
-  const isPaid = PAID_FAMILY.includes(
-    (order.paymentStatus || "").toLowerCase(),
-  );
-
-  // Same real-payment-first, paid-status-fallback logic already used in
-  // OrderDetailDrawer.jsx's Payment history section — not reinvented here.
-  const paidFromRecords = payments.reduce(
-    (sum, p) => sum + Number(p?.amount || 0),
-    0,
-  );
-  const paidAmount =
-    paidFromRecords > 0
-      ? paidFromRecords
-      : isPaid
-        ? Number(order.totalAmount || 0)
-        : 0;
-  const balanceDue = Math.max(0, Number(order.totalAmount || 0) - paidAmount);
 
   const taxAmount = Number(order.taxAmount || 0);
+  const shipping = Number(order.shippingAmount || 0);
+  const discount = Number(order.discountAmount || 0);
+
   // The fallback slab for lines that carry no rate of their own, measured
   // against the EX-GST base — the only base a GST rate is defined on.
-  // Measuring the tax against the GST-INCLUSIVE subtotal instead gave
-  // 33.56/220 = 15.25%, which is not a GST slab and printed on the invoice as
-  // "IGST15.25 (15.25%)" / "CGST7.63". Against the ex-GST 186.44 it gives the
-  // real 18%.
   const gstPercent = gstPercentFor(subtotal, taxAmount) ?? 0;
 
   // CGST+SGST vs IGST is decided by the place of supply. An order with no
-  // address has no place of supply to decide on, so it keeps the single
-  // combined GST column this invoice has always shown rather than splitting
-  // the tax under a heading that could be the wrong one.
+  // address has no place of supply to decide on; its tax cannot honestly be
+  // labelled either way, so it lands in neither column and appears only in
+  // Total Tax Amount.
   const placeOfSupply = address?.state || "";
-  const taxMode = !placeOfSupply
-    ? "combined"
-    : SELLER_STATE_ALIASES.has(normalizeState(placeOfSupply))
-      ? "intra"
-      : "inter";
-  const isIntraState = taxMode === "intra";
+  const isIntraState =
+    !!placeOfSupply && SELLER_STATE_ALIASES.has(normalizeState(placeOfSupply));
+  const isInterState = !!placeOfSupply && !isIntraState;
 
-  // Per-line slab, so a mixed 5%/18% basket prints each line at its own rate
-  // exactly as the reference invoices do. Falls back to the order-level rate
-  // this invoice has always derived from taxAmount/subtotal when the line
-  // itself carries no slab.
+  // Per-line slab, so a mixed 5%/18% basket prints each line at its own rate.
   const itemGstPercent = (it) => {
     const raw =
       it?.taxPercent ??
@@ -213,122 +185,78 @@ const OrderInvoice = ({ order, id, variants }) => {
       percent,
       // EXTRACTED from the line, not added to it: `lineAmount` is stored
       // GST-inclusive, so the tax inside ₹110 at 18% is 110 x 18/118 = 16.78,
-      // not 110 x 18/100 = 19.80. Adding it on top overstated every line whose
-      // item carried a real taxPercent, and made the totals column exceed the
-      // amount actually charged.
+      // not 110 x 18/100 = 19.80.
       gst: (lineAmount * percent) / (100 + percent),
       hsn: it.hsnCode || it.hsn || it.variant?.hsnCode,
     };
   });
 
-  // Tax rows are grouped by slab, so a mixed basket prints one entry per rate
-  // — "CGST9 / SGST9" alongside "CGST2.5 / SGST2.5" — the way the reference
-  // totals block reads. Summed from the same per-line values the table prints
-  // above, so the summary always adds up to its own column.
-  const gstByPercent = new Map();
-  rows.forEach((r) => {
-    // 0% is a real slab, not "no tax": a zero-rated line still has to print as
-    // IGST 0% (or CGST 0% + SGST 0%) rather than vanishing from the summary and
-    // dropping the whole invoice back to the unlabelled combined GST row.
-    if (r.percent == null || Number.isNaN(r.percent)) return;
-    gstByPercent.set(r.percent, (gstByPercent.get(r.percent) || 0) + r.gst);
-  });
-  // Highest slab first, the order both reference invoices list them in
-  // (IGST18 above IGST5; CGST9/SGST9 above CGST2.5/SGST2.5).
-  const slabs = [...gstByPercent.entries()].sort((a, b) => b[0] - a[0]);
-  // "combined" produces no split rows at all — with no place of supply the
-  // tax cannot honestly be labelled either IGST or CGST/SGST, so the totals
-  // fall through to the single combined GST row, matching the single combined
-  // GST column the table shows in that same case.
-  const taxRows = slabs.flatMap(([percent, amount]) =>
-    taxMode === "combined"
-      ? []
-      : isIntraState
-        ? [
-            {
-              label: `CGST${fmtPercent(percent / 2)}`,
-              percent: percent / 2,
-              amount: amount / 2,
-            },
-            {
-              label: `SGST${fmtPercent(percent / 2)}`,
-              percent: percent / 2,
-              amount: amount / 2,
-            },
-          ]
-        : [{ label: `IGST${fmtPercent(percent)}`, percent, amount }],
-  );
-
-  // Line prices are stored GST-INCLUSIVE, so `subtotal` above already
-  // contains the tax. The Sub Total row must therefore show that figure with
-  // the tax taken back OUT — printing the inclusive amount beside the tax
-  // rows counts the GST twice and the column stops adding up to the total.
-  //
-  // The amount subtracted is the tax this invoice actually PRINTS (the sum of
-  // the CGST/SGST or IGST rows below), not order.taxAmount, so the column
-  // reconciles whichever path produced those rows: per-line slabs, the
-  // blended fallback, or the single combined row.
+  // Falls back to the order's own tax figure when no line carried a slab, so
+  // the summary never silently reports zero tax on a taxed order.
   const displayedTaxTotal =
-    taxRows.length > 0
-      ? taxRows.reduce((sum, row) => sum + Number(row.amount || 0), 0)
-      : taxAmount;
+    rows.length > 0 ? rows.reduce((sum, r) => sum + r.gst, 0) : taxAmount;
+
+  // The three summary buckets. At most one is non-zero for any given order,
+  // because the place of supply decides the whole invoice.
+  const cgstTotal = isIntraState ? displayedTaxTotal / 2 : 0;
+  const sgstTotal = isIntraState ? displayedTaxTotal / 2 : 0;
+  const igstTotal = isInterState ? displayedTaxTotal : 0;
+  const totalTax = cgstTotal + sgstTotal + igstTotal;
+
+  // Line prices are stored GST-INCLUSIVE, so `subtotal` already contains the
+  // tax; the Sub Total row must show it with the tax taken back OUT or the
+  // column counts the GST twice.
   const subtotalExGst = exGstSubtotal(subtotal, displayedTaxTotal);
+  // Taxable Value is the whole taxable base of the supply — goods ex-GST plus
+  // shipping. On the reference: 0.10 + 1.00 = 1.10.
+  const taxableValue = subtotalExGst + shipping;
 
-  // Column count changes with the tax mode: 4 fixed + Amount, plus one GST
-  // column, two IGST columns, or four CGST/SGST columns.
-  const columnCount = taxMode === "combined" ? 6 : isIntraState ? 9 : 7;
-
+  const customerPhone = order.customer?.phone || address?.phone || "";
   const addressLines = address
     ? [
         [address.addressLine1, address.addressLine2].filter(Boolean).join(", "),
-        address.city,
-        [address.state, address.postalCode].filter(Boolean).join(" "),
-        address.country,
+        // "Erode - 638104, CONT: 7397036307" — the reference folds city,
+        // postcode and contact number onto one line.
+        [
+          [address.city, address.postalCode].filter(Boolean).join(" - "),
+          customerPhone ? `CONT: ${customerPhone}` : "",
+        ]
+          .filter(Boolean)
+          .join(", "),
+        address.state,
       ].filter(Boolean)
     : [];
 
   // Bill To and Ship To both describe this order's single address — the same
-  // honest reuse this file has always documented, now rendered as the
-  // reference's two bordered panels.
-  const customerName = order.customer?.name || address?.name || "—";
-  const customerPhone = order.customer?.phone || address?.phone || "";
-  const customerEmail = order.customer?.email || "";
-  const customerGstin =
-    order.customer?.gstin || order.customer?.gstIn || address?.gstin || "";
+  // honest reuse this file has always documented.
+  const customerName = order.customer?.name || address?.name || DASH;
 
-  // Table column definitions drive BOTH header rows and every body row, so a
-  // tax-mode change can never leave the two out of step.
-  const taxColumns =
-    taxMode === "combined"
-      ? [{ key: "gst", label: "GST", span: 1 }]
-      : isIntraState
-        ? [
-            { key: "cgst", label: "CGST", span: 2 },
-            { key: "sgst", label: "SGST", span: 2 },
-          ]
-        : [{ key: "igst", label: "IGST", span: 2 }];
-
-  const TH = "border border-gray-400 px-1.5 py-1 font-semibold";
+  const TH = "border border-gray-400 px-1.5 py-1 font-bold";
   const TD = "border border-gray-400 px-1.5 py-1.5 align-top";
+
+  // One tax cell. The reference prints "—" wherever a component does not
+  // apply: a zero-rated line, or CGST/SGST on an inter-state supply.
+  const taxCell = (applies, value, isPercent) => {
+    if (!applies || !value) return DASH;
+    return isPercent ? `${fmtPercent(value)}%` : fmtNum(value);
+  };
 
   return (
     <div id={id} className="invoice-page bg-white text-gray-900">
-      {/* PAGE 1 */}
+      {/* ============================ PAGE 1 ============================ */}
       <div className="invoice-sheet">
-        <div className="invoice-border">
-          {/* HEADER — logo + dynamic company block left, title right */}
-          <div className="flex items-start justify-between gap-4 px-3 py-3 border-b border-gray-400">
-            <div className="flex items-start gap-2.5 min-w-0">
+        <div className="invoice-content">
+          {/* HEADER — company block left, TAX INVOICE right, closed by a
+              rule. No box, exactly as the reference. */}
+          <div className="flex items-start justify-between gap-6 pb-4 border-b border-gray-400">
+            <div className="flex items-start gap-3 min-w-0">
               <img
                 src={logo}
                 alt=""
-                className="h-11 w-auto object-contain shrink-0"
+                className="h-12 w-auto object-contain shrink-0"
               />
-              <div className="min-w-0 text-[10px] leading-[1.5] text-gray-700">
-                <p className="!m-0 text-[13.5px] font-bold leading-tight text-gray-900">
-                  {SELLER.name}
-                </p>
-                {SELLER.tagline && <p className="!m-0">{SELLER.tagline}</p>}
+              <div className="min-w-0 text-[10.5px] font-bold leading-[1.5] text-gray-900">
+                <p className="!m-0 text-[12px] font-bold">{SELLER.name}</p>
                 {SELLER.addressLines.map((line, i) => (
                   <p key={i} className="!m-0">
                     {line}
@@ -339,129 +267,90 @@ const OrderInvoice = ({ order, id, variants }) => {
                 {SELLER.email && <p className="!m-0">{SELLER.email}</p>}
               </div>
             </div>
-            <p className="!m-0 text-[24px] font-bold tracking-tight leading-none text-gray-900 shrink-0">
+            <p className="!m-0 text-[26px] font-bold tracking-tight leading-none text-gray-900 shrink-0">
               TAX INVOICE
             </p>
           </div>
 
-          {/* INVOICE INFORMATION — two bordered columns */}
-          <div className="grid grid-cols-2 border-b border-gray-400">
-            <div className="px-3 py-2 border-r border-gray-400">
+          {/* INVOICE INFORMATION — one bordered panel, two columns. */}
+          <div className="mt-4 grid grid-cols-2 gap-x-8 border border-gray-400 px-4 py-3">
+            <div>
               <InfoRow label="Invoice No." value={order.orderNumber} />
               <InfoRow label="Invoice Date" value={fmtDate(order.createdAt)} />
               <InfoRow
-                label="Payment Method"
-                value={paymentMethod ? formatLabel(paymentMethod) : "—"}
+                label="Terms"
+                value={order.paymentTerms || "100% advance payment."}
               />
               <InfoRow
-                label="Payment Status"
-                value={formatLabel(order.paymentStatus)}
+                label="Due Date"
+                value={fmtDate(order.dueDate || order.createdAt)}
               />
             </div>
-            <div className="px-3 py-2">
-              <InfoRow label="Place Of Supply" value={address?.state} />
-              <InfoRow label="Order Status" value={formatLabel(order.status)} />
+            <div>
+              <InfoRow label="Place Of Supply" value={placeOfSupply} />
+              <InfoRow label="Destination" value={address?.city} />
+              <InfoRow
+                label="Mode of Delivery"
+                value={order.shippingMethod || order.deliveryMode || "Standard"}
+              />
             </div>
           </div>
 
-          {/* BILL TO / SHIP TO */}
-          <div className="grid grid-cols-2 border-b border-gray-400 bg-gray-100">
-            <div className="px-3 py-1 border-r border-gray-400">
-              <p className="!m-0 text-[10px] font-bold uppercase tracking-wide text-gray-700">
-                Bill To
-              </p>
-            </div>
-            <div className="px-3 py-1">
-              <p className="!m-0 text-[10px] font-bold uppercase tracking-wide text-gray-700">
-                Ship To
-              </p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 border-b border-gray-400">
-            <div className="border-r border-gray-400">
-              <PartyPanel
-                name={customerName}
-                lines={addressLines}
-                phone={customerPhone}
-                email={customerEmail}
-                gstin={customerGstin}
-              />
-            </div>
-            <PartyPanel
+          {/* BILL TO / SHIP TO — two separate boxes side by side. */}
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <PartyBox
+              heading="Bill To"
+              name={customerName}
+              lines={addressLines}
+            />
+            <PartyBox
+              heading="Ship To"
               name={customerName}
               lines={
                 addressLines.length > 0 ? addressLines : ["No address on file"]
               }
-              phone={customerPhone}
             />
           </div>
 
-          {/* ITEMS — fully bordered, two-row header so CGST/SGST (or IGST)
-              group a %/Amt pair each, exactly as the reference does. */}
-          <table className="invoice-items-table w-full text-[10px] border-collapse">
+          {/* ITEMS — fixed columns: # / Item & Description / Qty / Rate /
+              CGST(%,Amt) / SGST(%,Amt) / Amount, exactly as the reference. */}
+          <table className="invoice-items-table mt-3 w-full text-[10px] border-collapse">
             <thead>
-              <tr className="bg-gray-100 text-gray-900">
-                <th rowSpan={2} className={`${TH} w-[26px] text-center`}>
+              <tr className="text-gray-900">
+                <th rowSpan={2} className={`${TH} w-[30px] text-center`}>
                   #
                 </th>
                 <th rowSpan={2} className={`${TH} text-left`}>
                   Item &amp; Description
                 </th>
-                <th rowSpan={2} className={`${TH} w-[46px] text-right`}>
+                <th rowSpan={2} className={`${TH} w-[52px] text-right`}>
                   Qty
                 </th>
-                <th rowSpan={2} className={`${TH} w-[62px] text-right`}>
+                <th rowSpan={2} className={`${TH} w-[58px] text-right`}>
                   Rate
                 </th>
-                {taxColumns.map((c) =>
-                  c.span === 1 ? (
-                    <th
-                      key={c.key}
-                      rowSpan={2}
-                      className={`${TH} w-[70px] text-right`}
-                    >
-                      {c.label}
-                    </th>
-                  ) : (
-                    <th
-                      key={c.key}
-                      colSpan={2}
-                      className={`${TH} text-center ${
-                        isIntraState ? "w-[92px]" : "w-[104px]"
-                      }`}
-                    >
-                      {c.label}
-                    </th>
-                  ),
-                )}
+                <th colSpan={2} className={`${TH} w-[96px] text-center`}>
+                  CGST
+                </th>
+                <th colSpan={2} className={`${TH} w-[96px] text-center`}>
+                  SGST
+                </th>
                 <th rowSpan={2} className={`${TH} w-[76px] text-right`}>
                   Amount
                 </th>
               </tr>
-              <tr className="bg-gray-100 text-gray-900">
-                {taxColumns
-                  .filter((c) => c.span === 2)
-                  .flatMap((c) => [
-                    <th
-                      key={`${c.key}-p`}
-                      className={`${TH} w-[34px] text-right`}
-                    >
-                      %
-                    </th>,
-                    <th
-                      key={`${c.key}-a`}
-                      className={`${TH} w-[58px] text-right`}
-                    >
-                      Amt
-                    </th>,
-                  ])}
+              <tr className="text-gray-900">
+                <th className={`${TH} w-[38px] text-center`}>%</th>
+                <th className={`${TH} w-[58px] text-center`}>Amt</th>
+                <th className={`${TH} w-[38px] text-center`}>%</th>
+                <th className={`${TH} w-[58px] text-center`}>Amt</th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={columnCount}
+                    colSpan={9}
                     className={`${TD} py-6 text-center text-gray-400`}
                   >
                     No items on this order
@@ -470,25 +359,23 @@ const OrderInvoice = ({ order, id, variants }) => {
               ) : (
                 rows.map(({ it, key, lineAmount, percent, gst, hsn }, i) => {
                   // Intra-state splits the line tax evenly between the two
-                  // halves of the same slab; inter-state charges the whole
-                  // slab as IGST.
+                  // halves of the same slab.
                   const halfGst = gst / 2;
                   const halfPercent = percent / 2;
                   const variantName = variantNameFor(it, variants);
                   return (
                     <tr key={key} className="invoice-row">
-                      <td className={`${TD} text-center text-gray-600`}>
+                      <td className={`${TD} text-center text-gray-800`}>
                         {i + 1}
                       </td>
                       <td className={`${TD} text-gray-900`}>
-                        <div className="leading-[1.4]">{it.productName}</div>
-                        {variantName && (
-                          <div className="leading-[1.4] text-gray-700">
-                            {variantName}
-                          </div>
-                        )}
+                        {/* "health-check-brand-zero — 50 g" — one line. */}
+                        <div className="leading-[1.4]">
+                          {it.productName}
+                          {variantName ? ` ${DASH} ${variantName}` : ""}
+                        </div>
                         {hsn && (
-                          <div className="mt-1 text-[9px] leading-[1.3] text-gray-500">
+                          <div className="mt-0.5 text-[9px] leading-[1.3] text-gray-500">
                             HSN: {hsn}
                           </div>
                         )}
@@ -499,40 +386,19 @@ const OrderInvoice = ({ order, id, variants }) => {
                       <td className={`${TD} text-right tabular-nums`}>
                         {fmtNum(it.price)}
                       </td>
-                      {taxMode === "combined" && (
-                        <td className={`${TD} text-right tabular-nums`}>
-                          {fmtNum(gst)}
-                        </td>
-                      )}
-                      {taxMode === "inter" && (
-                        <>
-                          <td className={`${TD} text-right tabular-nums`}>
-                            {fmtPercent(percent)}%
-                          </td>
-                          <td className={`${TD} text-right tabular-nums`}>
-                            {fmtNum(gst)}
-                          </td>
-                        </>
-                      )}
-                      {isIntraState && (
-                        <>
-                          <td className={`${TD} text-right tabular-nums`}>
-                            {fmtPercent(halfPercent)}%
-                          </td>
-                          <td className={`${TD} text-right tabular-nums`}>
-                            {fmtNum(halfGst)}
-                          </td>
-                          <td className={`${TD} text-right tabular-nums`}>
-                            {fmtPercent(halfPercent)}%
-                          </td>
-                          <td className={`${TD} text-right tabular-nums`}>
-                            {fmtNum(halfGst)}
-                          </td>
-                        </>
-                      )}
-                      <td
-                        className={`${TD} text-right tabular-nums font-semibold`}
-                      >
+                      <td className={`${TD} text-center tabular-nums`}>
+                        {taxCell(isIntraState, halfPercent, true)}
+                      </td>
+                      <td className={`${TD} text-center tabular-nums`}>
+                        {taxCell(isIntraState, halfGst, false)}
+                      </td>
+                      <td className={`${TD} text-center tabular-nums`}>
+                        {taxCell(isIntraState, halfPercent, true)}
+                      </td>
+                      <td className={`${TD} text-center tabular-nums`}>
+                        {taxCell(isIntraState, halfGst, false)}
+                      </td>
+                      <td className={`${TD} text-right tabular-nums font-bold`}>
                         {fmtNum(lineAmount)}
                       </td>
                     </tr>
@@ -542,113 +408,120 @@ const OrderInvoice = ({ order, id, variants }) => {
             </tbody>
           </table>
 
-          {/* WORDS + NOTES  /  TOTALS — one bordered band, split by a
-              vertical rule, as the reference lays it out. */}
-          <div className="grid grid-cols-[1fr_280px] border-b border-gray-400">
-            <div className="px-3 py-2.5 border-r border-gray-400">
-              <p className="!m-0 text-[9.5px] font-semibold uppercase tracking-wide text-gray-500">
+          {/* TAX SUMMARY — five bordered columns. */}
+          <table className="mt-3 w-full text-[10px] border-collapse">
+            <thead>
+              <tr>
+                {[
+                  "Taxable Value",
+                  "CGST Amount",
+                  "SGST Amount",
+                  "IGST Amount",
+                  "Total Tax Amount",
+                ].map((h) => (
+                  <th key={h} className={`${TH} text-left`}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                {[taxableValue, cgstTotal, sgstTotal, igstTotal, totalTax].map(
+                  (v, i) => (
+                    <td
+                      key={i}
+                      className={`${TD} font-bold tabular-nums text-gray-900`}
+                    >
+                      {fmtNum(v)}
+                    </td>
+                  ),
+                )}
+              </tr>
+            </tbody>
+          </table>
+
+          {/* TAX AMOUNT IN WORDS */}
+          <p className="!m-0 pt-2.5 text-[10.5px] text-gray-900">
+            <span className="font-bold">Tax Amount (in words):</span>{" "}
+            <span className="italic">{inWords(totalTax)}</span>
+          </p>
+
+          {/* TOTAL IN WORDS  /  TOTALS — unboxed band, as the reference. */}
+          <div className="mt-3 grid grid-cols-[1fr_260px] gap-8">
+            <div>
+              <p className="!m-0 text-[10.5px] font-bold uppercase tracking-[0.04em] text-gray-900">
                 Total In Words
               </p>
-              <p className="!m-0 mt-0.5 text-[11px] italic font-semibold text-gray-800">
-                Indian Rupee {numberToWordsINR(order.totalAmount)}
-              </p>
-              <p className="!m-0 mt-3 text-[9.5px] font-semibold uppercase tracking-wide text-gray-500">
-                Notes
-              </p>
-              <p className="!m-0 mt-0.5 text-[10.5px] text-gray-700">
-                {order.notes || "Thanks for your business."}
+              <p className="!m-0 pt-0.5 text-[10.5px] italic text-gray-800">
+                {inWords(order.totalAmount)}
               </p>
             </div>
 
             <div className="text-[10.5px]">
-              <div className="flex items-center justify-between px-3 py-1">
-                <span className="text-gray-700">Sub Total (Ex-GST)</span>
+              <div className="flex items-center justify-between py-[3px]">
+                <span className="text-gray-900">Sub Total (Ex-GST)</span>
                 <span className="tabular-nums text-gray-900">
-                  {fmtNum(subtotalExGst)}
+                  {fmtRs(subtotalExGst)}
                 </span>
               </div>
-              {Number(order.discountAmount) > 0 && (
-                <div className="flex items-center justify-between px-3 py-1">
-                  <span className="text-gray-700">Discount</span>
+              {discount > 0 && (
+                <div className="flex items-center justify-between py-[3px]">
+                  <span className="text-gray-900">Discount</span>
                   <span className="tabular-nums text-gray-900">
-                    -{fmtNum(order.discountAmount)}
+                    -{fmtRs(discount)}
                   </span>
                 </div>
               )}
-              {/* One row per tax component, in the reference labelling
-                  ("CGST9 (9%)", "IGST18 (18%)"), and only for slabs the order
-                  actually uses. Falls back to the original single combined GST
-                  row when the place of supply is unknown. */}
-              {taxRows.length > 0 ? (
-                taxRows.map((row) => (
-                  <div
-                    key={row.label}
-                    className="flex items-center justify-between px-3 py-1"
-                  >
-                    <span className="text-gray-700">
-                      {row.label} ({fmtPercent(row.percent)}%)
-                    </span>
-                    <span className="tabular-nums text-gray-900">
-                      {fmtNum(row.amount)}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <div className="flex items-center justify-between px-3 py-1">
-                  <span className="text-gray-700">
-                    GST ({gstPercent.toFixed(1)}%)
-                  </span>
-                  <span className="tabular-nums text-gray-900">
-                    {fmtNum(taxAmount)}
-                  </span>
-                </div>
-              )}
-              {Number(order.shippingAmount) > 0 && (
-                <div className="flex items-center justify-between px-3 py-1">
-                  <span className="text-gray-700">Shipping</span>
-                  <span className="tabular-nums text-gray-900">
-                    {fmtNum(order.shippingAmount)}
-                  </span>
-                </div>
-              )}
-              <div className="flex items-center justify-between px-3 py-1.5 border-t border-gray-400 bg-gray-100">
-                <span className="font-bold text-gray-900">Total</span>
-                <span className="font-bold tabular-nums text-gray-900">
+              <div className="flex items-center justify-between py-[3px]">
+                <span className="text-gray-900">Shipping</span>
+                <span className="tabular-nums text-gray-900">
+                  {fmtRs(shipping)}
+                </span>
+              </div>
+              <div className="mt-1.5 flex items-center justify-between border-t border-gray-400 pt-2">
+                <span className="text-[13px] font-bold text-gray-900">
+                  Total
+                </span>
+                <span className="text-[13px] font-bold tabular-nums text-gray-900">
                   {fmtRs(order.totalAmount)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between px-3 py-1">
-                <span className="text-gray-700">Payment Made</span>
-                <span className="tabular-nums text-gray-900">
-                  (-) {fmtNum(paidAmount)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between px-3 py-1.5 border-t border-gray-400">
-                <span className="font-bold text-gray-900">Balance Due</span>
-                <span className="font-bold tabular-nums text-gray-900">
-                  {fmtRs(balanceDue)}
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="invoice-page-number">1</div>
+          <div className="invoice-page-number">Page 1 of 2</div>
         </div>
       </div>
 
-      {/* PAGE 2 — TERMS & CONDITIONS, always its own page (matching the
-          reference exactly, regardless of how many items page 1 held). */}
+      {/* ============================ PAGE 2 ============================
+          Signature block + Terms and Conditions, always its own page
+          regardless of how many items page 1 held. */}
       <div className="invoice-sheet invoice-page-break">
-        <div className="invoice-border invoice-terms-page">
-          <p className="!m-0 px-3 pt-4 mb-2 text-[11px] font-bold uppercase tracking-wide text-gray-900">
-            Terms and Conditions
+        <div className="invoice-content">
+          <div className="text-right text-[10.5px] text-gray-900">
+            <p className="!m-0">For {titleCaseName(SELLER.name)}</p>
+            {/* Signing space. A spacer element, not a margin on the <p>
+                below: every <p> here carries !m-0 to neutralise Bootstrap's
+                unlayered `p { margin-bottom: 1rem }`, and that !important
+                also beats any mt-* utility beside it — the gap measured as
+                0px until this div replaced it. */}
+            <div className="h-[56px]" aria-hidden="true" />
+            <p className="!m-0">Authorised Signatory</p>
+          </div>
+
+          <p className="!m-0 pt-8 text-[13px] font-bold text-gray-900">
+            TERMS AND CONDITIONS
           </p>
-          <ol className="px-3 pb-4 space-y-1.5 text-[10px] text-gray-700 leading-[1.5] list-decimal list-outside ml-5">
+          <ol className="mt-3 pl-6 space-y-2 text-[10.5px] leading-[1.55] text-gray-900 list-decimal list-outside">
             {TERMS.map((t, i) => (
-              <li key={i}>{t}</li>
+              <li key={i} className="pl-1">
+                {t}
+              </li>
             ))}
           </ol>
-          <div className="invoice-page-number">2</div>
+
+          <div className="invoice-page-number">Page 2 of 2</div>
         </div>
       </div>
     </div>

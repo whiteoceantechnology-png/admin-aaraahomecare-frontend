@@ -91,15 +91,43 @@ const makePool = (base, unit) => {
   const qty = base / perUnit;
   // Whole numbers print plainly; a partial unit (1.5 L) keeps its decimals.
   const shown = Number.isInteger(qty) ? qty : Number(qty.toFixed(3));
+  const display = displayFor(base, unit);
   return {
     qty: shown,
     unit,
-    // How the figure is shown to the admin: "2,925 ML".
-    label: `${shown.toLocaleString("en-IN")} ${unit === "piece" ? "UNIT" : unit.toUpperCase()}`,
+    // How the figure is shown to the admin: "2,925 ML", "100 KG".
+    label: display.label,
     base,
     family: unitFamily(unit),
   };
 };
+
+// DISPLAY ONLY — the stored value and every calculation stay in base units.
+//
+// Mass pools are always PRESENTED in kilograms whatever they are stored in,
+// because the API sends grams: 100,000 g reads as "100 KG", not
+// "1,00,000 G", and 500 g as "0.5 KG". Volume and count are unchanged.
+const displayFor = (base, unit) => {
+  const family = unitFamily(unit);
+  const divisor = family === "mass" ? 1000 : 1;
+  const suffix =
+    family === "mass" ? "KG" : family === "count" ? "UNIT" : "ML";
+  const value = base / divisor;
+  // 100 -> "100", 0.5 -> "0.5"; never "100.000".
+  const shown = Number.isInteger(value) ? value : Number(value.toFixed(3));
+  return { value: shown, suffix, label: `${shown.toLocaleString("en-IN")} ${suffix}` };
+};
+
+// A stock quantity with the unit the API reported it in: 9000 + "ml" reads
+// "9000 ml". The unit is never inferred or hardcoded — a row without one
+// simply shows the bare number rather than a guessed suffix.
+export const formatStock = (value, unit) =>
+  `${value ?? 0} ${unit ?? ""}`.trim();
+
+// The stock unit attached to an inventory row or product, read across the
+// names the response may use for it.
+export const stockUnitOf = (row) =>
+  row?.stockUnit ?? row?.productStockUnit ?? row?.product?.stockUnit ?? null;
 
 // A variant's size in base units — "250 ml" -> 250, "1 L" -> 1000.
 export const variantSizeBase = (variantName) => {

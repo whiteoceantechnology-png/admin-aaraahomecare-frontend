@@ -61,28 +61,42 @@ const Variant = ({ title = "Inventory" }) => {
     return () => clearTimeout(t);
   }, [searchInput]);
 
+  // Any filter change starts again at page 1 — including a category change,
+  // so the new category's results are never opened at a page that only
+  // existed for the previous one.
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, selectedCategoryIds, statusFilter, lowStockOnly]);
 
-  // Inventory rows carry no category info of their own (the real API
-  // response is {id, productId, productName, variantName, sku,
-  // stockQuantity, reservedQuantity, availableQuantity, status} — no
-  // category field), so unlike Products' client-side filter this has to be
-  // a real server-side param. Omitted entirely when every category is
-  // selected (== no filter), same as Products' "all selected" meaning.
-  // Comma-joining multiple ids is an unconfirmed assumption for the
-  // multi-select case — the single-category case (?categoryId=27) is the
-  // one actually confirmed against the backend.
+  // The category filter is a server-side query parameter: the selected
+  // category id goes out as ?categoryId= and the endpoint returns that
+  // category's inventory, which is rendered exactly as it arrives. Nothing is
+  // matched or filtered on the client.
+  //
+  // Omitted entirely when every category is selected — this dropdown's "All
+  // categories" state, the same meaning the Products page gives it — so
+  // clearing the filter returns to the plain paged list.
+  //
+  // One selected category sends `categoryId=21`. The dropdown is multi-select,
+  // so several are sent comma-joined; the single-id form is the confirmed one.
+  const categoryFilterActive =
+    categories.length > 0 && selectedCategoryIds.size !== categories.length;
+
   const categoryIdParam = () =>
-    categories.length > 0 && selectedCategoryIds.size !== categories.length
-      ? Array.from(selectedCategoryIds).join(",")
-      : undefined;
+    categoryFilterActive ? Array.from(selectedCategoryIds).join(",") : undefined;
+
+  // The dispatch promise of the list request currently in flight. Changing
+  // category aborts it before starting the next, so a slow earlier response
+  // can never land after — and overwrite — the newer category's rows.
+  const inFlightListRef = useRef(null);
 
   const loadList = () => {
     const categoryId = categoryIdParam();
+
+    inFlightListRef.current?.abort?.();
+
     if (lowStockOnly) {
-      dispatch(
+      inFlightListRef.current = dispatch(
         getLowStockInventory({
           threshold: LOW_STOCK_THRESHOLD,
           page: currentPage,
@@ -95,8 +109,9 @@ const Variant = ({ title = "Inventory" }) => {
       if (searchTerm) params.search = searchTerm;
       if (statusFilter !== "all") params.status = statusFilter;
       if (categoryId) params.categoryId = categoryId;
-      dispatch(getInventoryList(params));
+      inFlightListRef.current = dispatch(getInventoryList(params));
     }
+
     // Keep the "Low stock" chip's own count fresh regardless of which view
     // is active, so it never shows a stale number.
     if (!lowStockOnly) {
@@ -111,21 +126,33 @@ const Variant = ({ title = "Inventory" }) => {
     }
   };
 
+  // Identifies the request the current filters imply, so changing the
+  // category (or the page, search, status) re-fetches with the new query
+  // while an unrelated re-render does not.
+  const requestKey = [
+    lowStockOnly ? "low" : "list",
+    searchTerm,
+    statusFilter,
+    [...selectedCategoryIds].sort().join(","),
+    currentPage,
+    itemsPerPage,
+  ].join("::");
+
   useEffect(() => {
     loadList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    dispatch,
-    searchTerm,
-    selectedCategoryIds,
-    statusFilter,
-    lowStockOnly,
-    currentPage,
-    itemsPerPage,
-  ]);
+  }, [dispatch, requestKey]);
+
+  // Abort whatever is still in flight when the page unmounts.
+  useEffect(() => () => inFlightListRef.current?.abort?.(), []);
 
   const activeList = lowStockOnly ? lowStock : { items, meta, loading, error };
+  // Rendered exactly as the API returned it — the category-filtered response
+  // IS the list, and its meta drives pagination. Loading, error (with Try
+  // again) and the "No inventory found" empty state are handled by
+  // VariantTable from the props below.
   const rows = activeList.items || [];
+  const totalItems = activeList.meta?.total ?? 0;
 
   return (
     <div className="space-y-4">
@@ -171,7 +198,7 @@ const Variant = ({ title = "Inventory" }) => {
           lowStockError={lowStock?.error}
           currentPage={currentPage}
           itemsPerPage={itemsPerPage}
-          totalItems={activeList.meta?.total ?? 0}
+          totalItems={totalItems}
           onPageChange={setCurrentPage}
           onItemsPerPageChange={(value) => {
             setItemsPerPage(value);

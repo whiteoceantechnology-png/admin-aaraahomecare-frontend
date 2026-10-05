@@ -35,9 +35,11 @@ const normalizeList = (payload) => {
 /* ================= LIST ================= */
 export const getInventoryList = createAsyncThunk(
   "inventory/getList",
-  async (params = {}, { rejectWithValue }) => {
+  async (params = {}, { rejectWithValue, signal }) => {
     try {
-      const res = await fetchInventoryList(params);
+      // Passing the thunk's signal through means .abort() on the dispatch
+      // promise cancels the HTTP request itself.
+      const res = await fetchInventoryList(params, { signal });
       return normalizeList(res.data?.data);
     } catch (err) {
       return rejectWithValue(err.response?.data?.message || "Failed to fetch inventory");
@@ -189,6 +191,10 @@ const inventorySlice = createSlice({
         state.meta = action.payload.meta;
       })
       .addCase(getInventoryList.rejected, (state, action) => {
+        // A request cancelled because a newer one replaced it must not clear
+        // the loading flag or raise an error — the newer request is still in
+        // flight and owns the state now.
+        if (action.meta?.aborted) return;
         state.loading = false;
         state.error = action.payload;
       })

@@ -287,7 +287,7 @@ const OrderDetailDrawer = ({
                     <tr key={it.id}>
                       <td className="px-3.5 py-2 text-[12.5px] text-[var(--mk-ink-900)] font-medium">
                         {it.productName}
-                        {it.sizeLabel ? ` · ${it.sizeLabel}` : ""}
+                      
                       </td>
                       <td className="px-3.5 py-2 text-right tabular-nums text-[var(--mk-ink-700)]">
                         {it.quantity}

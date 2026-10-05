@@ -38,16 +38,31 @@ const fmtMoney = (n) =>
   `₹${Number(n ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // These are grouping/tab names only — never rendered as a Current Status
-// value. "New Orders" and "Processing Orders" deliberately overlap by
-// design: New = just-placed orders only; Processing = the whole active
-// range "from Order Placed until Delivered" (Order Placed + Packed +
-// Shipped), so a just-placed order legitimately appears in both. Completed
-// = Delivered only. Cancelled orders intentionally match no tab — whether
-// they belong under Completed (or need their own bucket) is a business
-// decision that hasn't been confirmed, so they're deliberately left
-// unbucketed rather than silently folded into Completed; they're still
-// fully reachable via the Current Status filter and search.
+// value.
+//
+// "All Orders" is the default and matches EVERY order the API returned,
+// whatever its status. It exists because the other three tabs are lifecycle
+// buckets that do not, and are not meant to, partition the full set:
+// CANCELLED, RETURN_REQUESTED, REFUNDED and any status the backend adds
+// later match none of them. With "new" as the old default, those orders
+// were absent from the list entirely and looked like missing API data.
+// Bucketing them is a business decision that still hasn't been confirmed,
+// so rather than guess, All Orders guarantees every order is reachable.
+//
+// The lifecycle tabs below are unchanged and still overlap by design:
+// New = just-placed orders only; Processing = the whole active range
+// "from Order Placed until Delivered" (Order Placed + Packed + Shipped),
+// so a just-placed order legitimately appears in both. Completed =
+// Delivered only.
 const ORDER_TABS = [
+  {
+    key: "all",
+    label: "All Orders",
+    // No status test at all — never add one. Any predicate here would
+    // silently hide whatever status it failed to anticipate, which is the
+    // exact bug this tab exists to prevent.
+    match: () => true,
+  },
   {
     key: "new",
     label: "New Orders",
@@ -78,10 +93,12 @@ const OrderTable = ({
 }) => {
   // Seeds the existing search box (never changes its own logic) — used when
   // arriving here from "View orders" on the Customers page with ?customer=
-  // in the URL. Empty by default, so every other caller is unaffected. Tab
-  // default is untouched (still "new") — deliberately not widened, since
-  // that's separate, pre-existing tab behavior this task shouldn't change.
-  const [activeTab, setActiveTab] = useState("new");
+  // in the URL. Empty by default, so every other caller is unaffected.
+  //
+  // The tab defaults to "all" so opening Orders shows the complete API
+  // result; it previously defaulted to "new", which meant cancelled and
+  // returned orders were invisible until the user changed a filter.
+  const [activeTab, setActiveTab] = useState("all");
   const [searchTerm, setSearchTerm] = useState(initialSearch);
   const [paymentFilter, setPaymentFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -103,7 +120,7 @@ const OrderTable = ({
   // toward more than one tab — this loop checks every tab per order rather
   // than assigning each order to a single bucket.
   const tabCounts = useMemo(() => {
-    const counts = { new: 0, processing: 0, completed: 0 };
+    const counts = { all: 0, new: 0, processing: 0, completed: 0 };
     data.forEach((o) => {
       const s = (o?.status || "").toLowerCase();
       ORDER_TABS.forEach((tab) => {
@@ -237,6 +254,19 @@ const OrderTable = ({
       render: (item) => <OrderStatusPill status={item?.paymentStatus} />,
     },
     {
+      // Read-only view of the order's OWN lifecycle status. Deliberately
+      // item.status, never item.paymentStatus — the two are separate fields
+      // (an order can be CANCELLED while its payment is still "pending") and
+      // the Payment column above owns paymentStatus.
+      //
+      // key is "orderStatus" only because "status" is already taken by the
+      // Current Status column below; the value rendered is item.status.
+      key: "orderStatus",
+      header: "Order Status",
+      width: "150px",
+      render: (item) => <OrderStatusPill status={item?.status} />,
+    },
+    {
       key: "status",
       header: "Current Status",
       sortable: true,
@@ -337,7 +367,7 @@ const OrderTable = ({
           <option value="all">All payment states</option>
           {paymentOptions.map((p) => (
             <option key={p} value={p}>
-              {p.replace(/_/g, " ")}
+              {titleCase(p)}
             </option>
           ))}
         </select>
@@ -351,7 +381,7 @@ const OrderTable = ({
           <option value="all">All current statuses</option>
           {statusOptions.map((s) => (
             <option key={s} value={s}>
-              {s.replace(/_/g, " ")}
+              {titleCase(s)}
             </option>
           ))}
         </select>
