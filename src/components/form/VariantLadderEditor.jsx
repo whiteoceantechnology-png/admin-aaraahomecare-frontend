@@ -21,6 +21,7 @@ import {
   findExistingVariantForStep,
   formatSizeLabel,
   generateVariantSku,
+  normalizeSku,
   ladderBadgeLabel,
   toExGst,
   toInclGst,
@@ -79,12 +80,39 @@ const VariantLadderEditor = ({
   existingVariants,
   onAddBatch,
   onUpdateBatch,
+  // Supplied by the drawer, which is the only place that knows which SKUs
+  // the whole catalogue has already claimed. Falls back to the bare
+  // generator so a caller that does not pass it still works — but that
+  // fallback CAN collide across products, which is the 409 this prop fixes.
+  makeSku,
+  // True when a SKU is already held by a variant elsewhere in the catalogue.
+  // Supplied by the drawer, which owns the catalogue-wide SKU set.
+  isSkuTaken,
   unitFamily: controlledUnitFamily,
   onUnitFamilyChange,
   // Lets the drawer's "Save changes" also commit ladder rows the admin has
   // priced but not pressed Add on, instead of silently discarding them.
   registerSave,
 }) => {
+  // One definition for "what SKU would a new variant of this size get" —
+  // used by the preview rows AND by the add payloads, so the admin can never
+  // be shown one SKU and have another submitted.
+  const skuFor = (qty, unit) =>
+    makeSku ? makeSku(qty, unit) : generateVariantSku(productName, qty, unit);
+
+  // A SKU the admin typed wins over the generated one; an untouched field
+  // keeps regenerating as the product name or size changes.
+  const skuOf = (input, qty, unit) =>
+    input?.skuTouched ? input.sku ?? "" : skuFor(qty, unit);
+
+  // Empty is not valid for a new variant, and neither is one the catalogue
+  // already holds. Returns null when the SKU is fine.
+  const skuErrorFor = (sku) => {
+    if (!normalizeSku(sku)) return "SKU is required.";
+    if (isSkuTaken && isSkuTaken(sku)) return "This SKU is already in use.";
+    return null;
+  };
+
   const ladderVariants = (existingVariants || []).map((variant) => ({
     ...variant,
     variantName: variant.variantName ?? variant.label,
@@ -169,6 +197,10 @@ const VariantLadderEditor = ({
   const [cUnit, setCUnit] = useState(unitOptions[0] || "g");
   const [cPrice, setCPrice] = useState("");
   const [cOffer, setCOffer] = useState("");
+  // The custom row's SKU. `cSkuTouched` records that the admin typed one, so
+  // it stops tracking the generated value instead of overwriting their input.
+  const [cSku, setCSku] = useState("");
+  const [cSkuTouched, setCSkuTouched] = useState(false);
   const [submittingCustom, setSubmittingCustom] = useState(false);
 
   useEffect(() => {
@@ -285,7 +317,11 @@ const VariantLadderEditor = ({
 
     const priceError = validatePrice(input.price);
     const offerError = validateOfferPrice(input.offerPrice, input.price);
-    const valid = !priceError && !offerError;
+    // Only new rows carry a SKU decision; an existing row keeps its stored one.
+    const rowSkuError = isExisting
+      ? null
+      : skuErrorFor(skuOf(input, qty, unit));
+    const valid = !priceError && !offerError && !rowSkuError;
     const dirty =
       isExisting &&
       (!numEq(input.price, input.original.price) ||
@@ -301,6 +337,7 @@ const VariantLadderEditor = ({
       valid,
       priceError,
       offerError,
+      rowSkuError,
       dirty,
     };
   });
@@ -329,7 +366,8 @@ const VariantLadderEditor = ({
           input.offerPrice === ""
             ? ""
             : toExGst(input.offerPrice, taxPercent, gstInclusive),
-        sku: generateVariantSku(productName, qty, unit),
+        // Exactly what the row displayed — generated, or the admin's own.
+        sku: skuOf(input, qty, unit),
       }));
       const addOk = await onAddBatch(additions);
       ok = ok && addOk !== false;
@@ -389,6 +427,13 @@ const VariantLadderEditor = ({
       : cUnit === "pack"
         ? `Pack of ${cQty || 0}`
         : `${cQty} ${cUnit}`;
+  // Regenerates from the product name and the chosen size until the admin
+  // edits it.
+  const cGeneratedSku =
+    Number(cQty) > 0 ? skuFor(Number(cQty), cUnit) : "";
+  const cSkuValue = cSkuTouched ? cSku : cGeneratedSku;
+  const cSkuError =
+    cQty !== "" && Number(cQty) > 0 ? skuErrorFor(cSkuValue) : null;
   const cQtyError =
     cQty !== "" && !(Number(cQty) > 0) ? "Quantity must be above 0." : null;
   const cPriceError = cQty !== "" ? validatePrice(cPrice) : null;
@@ -407,6 +452,7 @@ const VariantLadderEditor = ({
     !cQtyError &&
     !cPriceError &&
     !cOfferError &&
+    !cSkuError &&
     !cDuplicate;
 
   const handleAddCustom = async () => {
@@ -420,7 +466,7 @@ const VariantLadderEditor = ({
         price: toExGst(cPrice, taxPercent, gstInclusive),
         offerPrice:
           cOffer === "" ? "" : toExGst(cOffer, taxPercent, gstInclusive),
-        sku: generateVariantSku(productName, Number(cQty), cUnit),
+        sku: cSkuValue,
       },
     ]);
     setSubmittingCustom(false);
@@ -428,6 +474,8 @@ const VariantLadderEditor = ({
       setCQty("");
       setCPrice("");
       setCOffer("");
+      setCSku("");
+      setCSkuTouched(false);
       setCustomOpen(false);
     }
   };
@@ -502,9 +550,8 @@ const VariantLadderEditor = ({
           ({ qty, unit, key, input, isExisting, priceError, offerError }) => {
             const label = formatSizeLabel(qty, unit);
             // const hint = priceHint(input.price);
-            const sku = isExisting
-              ? input.sku
-              : generateVariantSku(productName, qty, unit);
+            const sku = isExisting ? input.sku : skuOf(input, qty, unit);
+            const skuError = isExisting ? null : skuErrorFor(sku);
 
             return (
               <div
@@ -565,11 +612,35 @@ const VariantLadderEditor = ({
                   )}
                 </div>
 
-                {/* SKU — always read-only: the variant's stored SKU, or
-                  auto-generated for a not-yet-created size */}
-                <span className="pt-2 text-[11.5px] text-[var(--mk-ink-400)] break-all">
-                  {sku}
-                </span>
+                {/* SKU — generated from the product name, and editable for a
+                  size that does not exist yet. An EXISTING variant's stored
+                  SKU stays read-only: changing it here would silently
+                  renumber a SKU already printed on stock. */}
+                {isExisting ? (
+                  <span className="pt-2 text-[11.5px] text-[var(--mk-ink-400)] break-all">
+                    {sku}
+                  </span>
+                ) : (
+                  <div>
+                    <input
+                      type="text"
+                      value={sku}
+                      onChange={(e) =>
+                        updateLadderInput(qty, unit, {
+                          sku: e.target.value,
+                          skuTouched: true,
+                        })
+                      }
+                      spellCheck={false}
+                      className={`${fldClass(!!skuError)} text-[11.5px]`}
+                    />
+                    {skuError && (
+                      <p className="text-[10.5px] font-medium text-[var(--mk-dgr)] mt-0.5">
+                        {skuError}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             );
           },
@@ -683,6 +754,32 @@ const VariantLadderEditor = ({
                 {cOfferError && (
                   <span className="text-[11px] font-medium text-[var(--mk-dgr)]">
                     {cOfferError}
+                  </span>
+                )}
+              </div>
+
+              {/* SKU — auto-generated from the product name and the chosen
+                  size, and editable. Typing here stops it tracking the
+                  generated value; uniqueness is checked against the whole
+                  catalogue as you type. */}
+              <div className="flex flex-col gap-1 col-span-2">
+                <label className="text-[11px] font-medium text-[var(--mk-ink-500)]">
+                  SKU
+                </label>
+                <input
+                  type="text"
+                  value={cSkuValue}
+                  onChange={(e) => {
+                    setCSku(e.target.value);
+                    setCSkuTouched(true);
+                  }}
+                  placeholder="auto-generated from the product name"
+                  spellCheck={false}
+                  className={fldClass(!!cSkuError)}
+                />
+                {cSkuError && (
+                  <span className="text-[11px] font-medium text-[var(--mk-dgr)]">
+                    {cSkuError}
                   </span>
                 )}
               </div>

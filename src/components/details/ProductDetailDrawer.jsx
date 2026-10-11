@@ -8,7 +8,7 @@
 // the mockup's product model has no brand/price fields (price lives only on
 // variants there), but this app's Product entity requires brandId,
 // actualPrice and discountPrice — those stay, styled to match.
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { useDispatch, useSelector } from "react-redux";
 import { toast } from "react-hot-toast";
@@ -56,12 +56,16 @@ import {
   canonicalStockUnit,
   unitFamilyForStockUnit,
 } from "../../config/stockUnits";
+import { getAllVariants } from "../../redux/slices/variantSlice";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
 import VariantLadderEditor from "../form/VariantLadderEditor";
 import ProductVariantEditor from "../form/ProductVariantEditor";
 import { productHealth } from "../../utils/productHealth";
 import {
   inferSizeSystemFromVariants,
+  generateVariantSku,
+  uniqueVariantSku,
+  normalizeSku,
   ladderBadgeLabel,
   findExistingVariantForStep,
   parseVariantLabel,
@@ -227,6 +231,13 @@ const ProductDetailDrawer = ({
   const { taxes = [] } = useSelector((state) => state.taxes || {});
   const { brands = [] } = useSelector((state) => state.brand || {});
   const { loading: imageLoading } = useSelector((state) => state.image || {});
+  // EVERY variant in the catalogue, not just this product's. A SKU clash is
+  // cross-product by nature (the 409 named variant #5094 on product #2864
+  // while a DIFFERENT product was being saved), so the product's own variant
+  // list cannot detect it. Refreshed when the drawer opens, below.
+  const { variants: allVariants = [] } = useSelector(
+    (state) => state.variant || {},
+  );
 
   const isCreate = productId == null;
 
@@ -342,6 +353,9 @@ const ProductDetailDrawer = ({
     dispatch(getAllCategoryList());
     dispatch(getAllTaxes());
     dispatch(getAllBrands());
+    // The taken-SKU set has to be current, or this drawer proposes a SKU
+    // another admin has claimed since the tab was opened.
+    dispatch(getAllVariants());
   }, [dispatch]);
 
   const refetch = () => productId && dispatch(getProductById(productId));
@@ -832,6 +846,7 @@ const ProductDetailDrawer = ({
     const stagedVariants = stagedVariantsByUnit[selectedUnitFamily] || [];
     if (isCreate && stagedVariants.length > 0) {
       const newProductId = res.payload.id;
+      const stagedClaimedSkus = [];
       const variantResults = await Promise.all(
         stagedVariants.map((v) =>
           dispatch(
@@ -846,8 +861,10 @@ const ProductDetailDrawer = ({
                   : v.price,
               // Same sku VariantLadderEditor already generated and showed in
               // the preview table — never a second formula computed
-              // independently at submit time.
-              sku: v.sku,
+              // independently at submit time. Passed through the uniqueness
+              // pass because these were generated BEFORE the product existed,
+              // so another product may have claimed the SKU in between.
+              sku: resolveSku(v.sku, stagedClaimedSkus),
               stockQuantity: v.stock || 0,
               status: true,
               imagePath: [],
@@ -893,6 +910,81 @@ const ProductDetailDrawer = ({
   };
 
   /* ================= VARIANTS ================= */
+  // Every SKU the API already holds, EXCEPT this product's own — a variant
+  // keeps its existing SKU when updated, so its own SKU must not count as
+  // "taken" against itself.
+  const takenSkus = useMemo(() => {
+    // Excluded by productId where the row carries one, else by matching the
+    // product's own variant ids. Depends on `product` (a stable store
+    // reference) rather than the `product?.variants || []` expression above,
+    // which is a fresh array on every render.
+    const myVariantIds = new Set(
+      (product?.variants || []).map((v) => String(v?.id)).filter(Boolean),
+    );
+    const isMine = (v) =>
+      v?.productId != null
+        ? String(v.productId) === String(product?.id)
+        : myVariantIds.has(String(v?.id));
+    return (allVariants || [])
+      .filter((v) => !isMine(v))
+      .map((v) => v?.sku)
+      .filter(Boolean);
+  }, [allVariants, product]);
+
+  // The ONE place a SKU for a new variant is decided. Both the ladder's
+  // preview and the POST below call this, so what the admin sees is exactly
+  // what is sent — the invariant the staged-create path already documented.
+  const makeVariantSku = useCallback(
+    (qty, unit) =>
+      uniqueVariantSku(
+        // watchedName, not product.name: on Add Product there is no product
+        // yet, and on Edit Product a rename should regenerate the SKU the
+        // admin is about to create.
+        generateVariantSku(watchedName || product?.name, qty, unit),
+        takenSkus,
+      ),
+    [watchedName, product?.name, takenSkus],
+  );
+
+  // Live check behind the editor's "This SKU is already in use." message.
+  // Uses the same normalisation the generator does, so the warning and the
+  // generated value can never disagree about whether a SKU is free.
+  const takenSkuSet = useMemo(
+    () => new Set(takenSkus.map(normalizeSku)),
+    [takenSkus],
+  );
+  const isSkuTaken = useCallback(
+    (sku) => takenSkuSet.has(normalizeSku(sku)),
+    [takenSkuSet],
+  );
+
+  // Belt-and-braces for a SKU that arrived already built (a staged variant
+  // generated before the product existed, or an older cached row): re-run it
+  // through the same uniqueness pass, counting SKUs claimed earlier in this
+  // same batch so two rows cannot be handed the same fallback.
+  const resolveSku = (sku, claimed) => {
+    const resolved = uniqueVariantSku(sku, [...takenSkus, ...claimed]);
+    claimed.push(resolved);
+    return resolved;
+  };
+
+  // The backend's own message, verbatim — "SKU ... already exists on variant
+  // #5094 (product #2864)" is precisely what the admin needs to see. The old
+  // "N of M variants failed" threw it away.
+  const reportFailures = (results, matcher, verb) => {
+    const failed = results.filter((r) => !matcher(r));
+    if (failed.length === 0) return false;
+    const messages = [
+      ...new Set(failed.map((r) => r.payload).filter(Boolean)),
+    ];
+    toast.error(
+      messages.length > 0
+        ? messages.join(" | ")
+        : `${failed.length} variant${failed.length === 1 ? "" : "s"} failed to ${verb}`,
+      { duration: 8000 },
+    );
+    return true;
+  };
   // Last line of defence before POST /admin/variants. The ladder already
   // hides sizes the product has, but that is a UI affordance: this re-checks
   // every addition against the product's variants as they exist right now and
@@ -936,6 +1028,7 @@ const ProductDetailDrawer = ({
     }
     if (additions.length === 0) return false;
 
+    const claimed = [];
     const results = await Promise.all(
       additions.map((v) =>
         dispatch(
@@ -945,21 +1038,17 @@ const ProductDetailDrawer = ({
             packSizeId: 1,
             price: v.price,
             discountedPrice: v.offerPrice !== "" ? v.offerPrice : v.price,
-            sku: v.sku,
+            sku: resolveSku(v.sku, claimed),
             status: true,
             imagePath: [],
           }),
         ),
       ),
     );
-    const failedCount = results.filter(
-      (r) => !addVariant.fulfilled.match(r),
-    ).length;
     refetch();
-    if (failedCount > 0) {
-      toast.error(
-        `${failedCount} of ${additions.length} variant${additions.length === 1 ? "" : "s"} failed to add`,
-      );
+    // Keeps the taken-SKU set current for the next add without a reload.
+    dispatch(getAllVariants());
+    if (reportFailures(results, addVariant.fulfilled.match, "add")) {
       return false;
     }
     toast.success(
@@ -987,14 +1076,8 @@ const ProductDetailDrawer = ({
         ),
       ),
     );
-    const failedCount = results.filter(
-      (r) => !updateVariant.fulfilled.match(r),
-    ).length;
     refetch();
-    if (failedCount > 0) {
-      toast.error(
-        `${failedCount} of ${updates.length} variant${updates.length === 1 ? "" : "s"} failed to update`,
-      );
+    if (reportFailures(results, updateVariant.fulfilled.match, "update")) {
       return false;
     }
     toast.success(
@@ -1568,6 +1651,8 @@ const ProductDetailDrawer = ({
                 categoryName={watchedCategoryName}
                 productName={watchedName}
                 taxPercent={watchedTaxPercent}
+                makeSku={makeVariantSku}
+                isSkuTaken={isSkuTaken}
                 unitFamily={selectedUnitFamily}
                 variantsByUnit={stagedVariantsByUnit}
                 onChange={(unitFamily, nextVariants) =>
@@ -1703,6 +1788,8 @@ const ProductDetailDrawer = ({
                     productName={product?.name}
                     taxPercent={product?.taxPercent}
                     existingVariants={productDataReady ? variants : undefined}
+                    makeSku={makeVariantSku}
+                    isSkuTaken={isSkuTaken}
                     onAddBatch={handleAddVariantBatch}
                     onUpdateBatch={handleUpdateVariantBatch}
                     registerSave={(fn) => {

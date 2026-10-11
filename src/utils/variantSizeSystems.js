@@ -174,14 +174,102 @@ export const formatSizeLabel = (qty, unit) => {
   return `${qty} ${unit}`;
 };
 
-// Same shape the existing chip-based flow already used in
-// ProductDetailDrawer.jsx's handleAddVariantInline — kept identical rather
-// than inventing a second SKU format.
+// Words carrying no identifying information, dropped from the SKU. The
+// approved example omits "with" —
+//   "100 ML Transparent Hair Oil Bottle with Comb Applicator"
+//   -> 100-ML-TRANSPARENT-HAIR-OIL-BOTTLE-COMB-APPLICATOR
+// — so this list is what implements that, not a cosmetic preference. Keep it
+// small: anything removed here is information the admin cannot see in the
+// SKU, and two product names differing ONLY by a stop word would collide
+// (uniqueVariantSku below still keeps them distinct).
+const SKU_STOP_WORDS = new Set([
+  "a", "an", "and", "by", "for", "in", "of", "on", "or", "the", "to", "with",
+]);
+
+// A SKU prefix that is long enough to stay readable but cannot grow without
+// bound from a very long product name. Trimmed at a hyphen so the prefix
+// never ends mid-word.
+const SKU_PREFIX_MAX = 60;
+
+// The product-name half of a SKU: uppercased, special characters removed,
+// spaces turned into hyphens, stop words dropped.
+//
+//   "100 ML Transparent Hair Oil Bottle with Comb Applicator"
+//     -> "100-ML-TRANSPARENT-HAIR-OIL-BOTTLE-COMB-APPLICATOR"
+//   "Butterfly Pea (Blue) Powder - 100% Natural"
+//     -> "BUTTERFLY-PEA-BLUE-POWDER-100-NATURAL"
+export const productSkuPrefix = (productName) => {
+  const words = (productName ?? "")
+    .toString()
+    .toUpperCase()
+    // Everything that is not a letter, digit, space or hyphen becomes a
+    // separator rather than being deleted, so "Pea(Blue)" does not weld into
+    // "PEABLUE".
+    .replace(/[^A-Z0-9\s-]+/g, " ")
+    .split(/[\s-]+/)
+    .filter(Boolean)
+    .filter((word) => !SKU_STOP_WORDS.has(word.toLowerCase()));
+
+  if (words.length === 0) return "SKU";
+
+  const slug = words.join("-");
+  if (slug.length <= SKU_PREFIX_MAX) return slug;
+  // Cut at the last hyphen inside the budget so the prefix ends on a whole
+  // word; if the first word alone is longer than the budget, hard-cut it.
+  const cut = slug.slice(0, SKU_PREFIX_MAX);
+  const lastHyphen = cut.lastIndexOf("-");
+  return lastHyphen > 0 ? cut.slice(0, lastHyphen) : cut;
+};
+
+// The BASE SKU for one variant: the product-name prefix above plus the
+// variant's own size.
+//
+//   generateVariantSku("100 ML Transparent Hair Oil Bottle with Comb Applicator", 1, "piece")
+//     -> "100-ML-TRANSPARENT-HAIR-OIL-BOTTLE-COMB-APPLICATOR-SINGLEPIECE"
+//   generateVariantSku("Butterfly Pea Powder", 250, "g")
+//     -> "BUTTERFLY-PEA-POWDER-250G"
+//
+// This replaced a three-letter prefix taken from the product name ("MLT"),
+// which carried nothing product-specific: every product whose name began
+// with the same three letters and had the same size produced a byte-
+// identical SKU, which is why POST /admin/variants kept returning
+//
+//   409 — SKU "MLT-SINGLEPIECE" already exists on variant #5094 (product #2864)
+//
+// for a brand-new variant on a DIFFERENT product. The full name makes a
+// collision unlikely; uniqueVariantSku below makes it impossible, and is
+// what callers must use before sending a SKU to the API.
 export const generateVariantSku = (productName, qty, unit) => {
-  const prefix = (productName || "SKU").replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase() || "SKU";
+  const prefix = productSkuPrefix(productName);
   const sizePart = formatSizeLabel(qty, unit).replace(/\s/g, "").toUpperCase();
   return `${prefix}-${sizePart}`;
 };
+
+// The first SKU not already taken, starting from `base`:
+//
+//   ...-SINGLEPIECE            (free)        -> ...-SINGLEPIECE
+//   ...-SINGLEPIECE            (taken)       -> ...-SINGLEPIECE-002
+//   ...-SINGLEPIECE, -002      (both taken)  -> ...-SINGLEPIECE-003
+//
+// `takenSkus` must be every SKU the API already holds ACROSS ALL PRODUCTS —
+// a per-product list cannot see the cross-product clash that caused the 409.
+// Comparison is case-insensitive so a stored "mlt-singlepiece" still counts
+// as taken rather than being proposed again in a different case.
+export const uniqueVariantSku = (base, takenSkus = []) => {
+  const taken = new Set(takenSkus.map(normalizeSku).filter(Boolean));
+  const root = normalizeSku(base) || "SKU";
+  if (!taken.has(root)) return root;
+  // Starts at 002 because the un-suffixed SKU is itself "001".
+  let n = 2;
+  while (taken.has(`${root}-${String(n).padStart(3, "0")}`)) n += 1;
+  return `${root}-${String(n).padStart(3, "0")}`;
+};
+
+// The one comparison rule for SKUs: trimmed and uppercased. Used by both the
+// generator above and the live "already taken" check in the editor, so the
+// two can never disagree about whether a SKU is free.
+export const normalizeSku = (value) =>
+  (value ?? "").toString().trim().toUpperCase();
 
 // True if `qty`/`unit` already exists among `variants` (same base quantity
 // within the same unit family) — used to grey out an already-added ladder

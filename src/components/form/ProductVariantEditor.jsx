@@ -25,6 +25,10 @@ const ProductVariantEditor = ({
   categoryName,
   productName,
   taxPercent,
+  // Passed straight through to the ladder editor so Add Product generates
+  // and validates SKUs exactly as Edit Product does.
+  makeSku,
+  isSkuTaken,
   variantsByUnit,
   onChange,
   unitFamily,
@@ -124,6 +128,8 @@ const ProductVariantEditor = ({
         categoryName={categoryName}
         productName={productName}
         taxPercent={taxPercent}
+        makeSku={makeSku}
+        isSkuTaken={isSkuTaken}
         unitFamily={activeUnitFamily}
         onUnitFamilyChange={setActiveUnitFamily}
         existingLabels={variants.map((v) => v.label)}

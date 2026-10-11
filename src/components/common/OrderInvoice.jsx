@@ -212,20 +212,48 @@ const OrderInvoice = ({ order, id, variants }) => {
   const taxableValue = subtotalExGst + shipping;
 
   const customerPhone = order.customer?.phone || address?.phone || "";
-  const addressLines = address
-    ? [
-        [address.addressLine1, address.addressLine2].filter(Boolean).join(", "),
-        // "Erode - 638104, CONT: 7397036307" — the reference folds city,
-        // postcode and contact number onto one line.
-        [
-          [address.city, address.postalCode].filter(Boolean).join(" - "),
-          customerPhone ? `CONT: ${customerPhone}` : "",
-        ]
-          .filter(Boolean)
-          .join(", "),
-        address.state,
-      ].filter(Boolean)
-    : [];
+  // The customer's own GSTIN, from the order detail response already loaded by
+  // the caller (GET /admin/orders/{id} -> data.customer.gstIn). No extra
+  // request is made for it. `gstIn` is the documented field name; the other
+  // spellings are read only so a differently-cased payload still works.
+  // Whitespace-only counts as absent, so a blank string can never print a
+  // bare "GSTIN:" label.
+  const customerGstin = (
+    order.customer?.gstIn ??
+    order.customer?.gstin ??
+    order.customer?.GSTIN ??
+    ""
+  )
+    .toString()
+    .trim();
+
+  // "Erode - 638104, CONT: 7397036307" — the reference folds city, postcode
+  // and one contact field onto a single line. `contact` is what varies
+  // between the two panels: BILL TO shows the GSTIN when the customer has
+  // one, SHIP TO always shows the phone (a shipping label needs a number to
+  // call, not a tax id).
+  const buildAddressLines = (contact) =>
+    address
+      ? [
+          [address.addressLine1, address.addressLine2]
+            .filter(Boolean)
+            .join(", "),
+          [
+            [address.city, address.postalCode].filter(Boolean).join(" - "),
+            contact,
+          ]
+            .filter(Boolean)
+            .join(", "),
+          address.state,
+        ].filter(Boolean)
+      : [];
+
+  const phoneLine = customerPhone ? `CONT: ${customerPhone}` : "";
+  // GSTIN REPLACES the phone here — it is not shown alongside it.
+  const billToLines = buildAddressLines(
+    customerGstin ? `GSTIN: ${customerGstin}` : phoneLine,
+  );
+  const shipToLines = buildAddressLines(phoneLine);
 
   // Bill To and Ship To both describe this order's single address — the same
   // honest reuse this file has always documented.
@@ -301,13 +329,14 @@ const OrderInvoice = ({ order, id, variants }) => {
             <PartyBox
               heading="Bill To"
               name={customerName}
-              lines={addressLines}
+              lines={billToLines}
             />
+            {/* SHIP TO is deliberately unchanged — still the phone. */}
             <PartyBox
               heading="Ship To"
               name={customerName}
               lines={
-                addressLines.length > 0 ? addressLines : ["No address on file"]
+                shipToLines.length > 0 ? shipToLines : ["No address on file"]
               }
             />
           </div>
