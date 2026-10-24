@@ -18,11 +18,6 @@ import {
   FILTER_SEARCH_INPUT_CLASS,
 } from "../common/filterToolbarStyles";
 
-const hasValue = (v) => v !== null && v !== undefined;
-
-const fmtMoney = (n) =>
-  `₹${Number(n ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
 // Cosmetic grouping of a raw phone string for display only (e.g. "90000 00009")
 // — never mutates the underlying value used for search/matching.
 const formatPhone = (phone) => {
@@ -114,12 +109,23 @@ const CustomerTable = ({ data = [], title = "Customers", onToggleBlock, onView, 
       render: (item) => item.ordersCount ?? 0,
     },
     {
-      key: "lifetimeSpend",
-      header: "Lifetime Spend",
-      width: "110px",
-      align: "right",
-      className: "text-[13px] text-[var(--mk-ink-900)] font-semibold tabular-nums",
-      render: (item) => (hasValue(item.lifetimeSpend) ? fmtMoney(item.lifetimeSpend) : "—"),
+      // Replaces the old Lifetime Spend column, in the same slot between
+      // Orders and Joined. `gstIn` comes straight off the customers API
+      // response — nothing is derived or defaulted here.
+      key: "gstIn",
+      header: "GSTIN",
+      width: "150px",
+      truncate: true,
+      truncateWidth: "140px",
+      // Left-aligned and tabular: a GSTIN is an identifier, not a quantity,
+      // so it does not inherit the money column's right alignment.
+      className: "text-[12.5px] text-[var(--mk-ink-700)] tabular-nums",
+      render: (item) => {
+        // Whitespace-only counts as missing, so a blank string renders the
+        // em dash rather than an empty-looking cell.
+        const gstin = (item?.gstIn ?? "").toString().trim();
+        return gstin || "—";
+      },
     },
     {
       key: "createdAt",

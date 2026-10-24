@@ -44,6 +44,7 @@ const ProductDetailsPage = lazy(
 );
 const Payment = lazy(() => import("../components/data/Payment"));
 const Logistics = lazy(() => import("../components/data/Logistics"));
+const SalesExport = lazy(() => import("../components/data/SalesExport"));
 
 const AppRoutes = () => {
   const token = localStorage.getItem("token");
@@ -224,6 +225,10 @@ const AppRoutes = () => {
         <Route
           path="/logistics"
           element={token ? <Logistics /> : <Navigate to="/auth" />}
+        />
+        <Route
+          path="/sales-export"
+          element={token ? <SalesExport /> : <Navigate to="/auth" />}
         />
         <Route
           path="/subscription"

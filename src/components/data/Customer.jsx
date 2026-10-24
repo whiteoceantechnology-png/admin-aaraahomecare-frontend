@@ -68,6 +68,14 @@ const Customer = ({ title = "Customers" }) => {
         .map((c) => c.createdAt)
         .filter(Boolean)
         .sort()[0];
+      // This page merges duplicate records by phone number, so the GSTIN may
+      // sit on any record in the group, not necessarily the primary one that
+      // the spread below carries. Take the first non-empty value — the same
+      // "best available across the group" rule ordersCount and isBlocked use.
+      const gstIn =
+        group
+          .map((c) => (c.gstIn ?? "").toString().trim())
+          .find(Boolean) || null;
 
       return {
         ...primary,
@@ -76,6 +84,7 @@ const Customer = ({ title = "Customers" }) => {
         mergedCount: group.length,
         ordersCount,
         lifetimeSpend,
+        gstIn,
         createdAt: earliestCreatedAt || primary.createdAt,
         isBlocked: group.some((c) => c.isBlocked),
       };

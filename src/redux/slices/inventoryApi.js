@@ -8,6 +8,17 @@ export const fetchInventoryList = (params = {}, config = {}) =>
 
 export const fetchLowStockInventory = (params = {}) => api.get("/admin/inventory/low-stock", { params });
 
+// Binary, NOT JSON: responseType "blob" stops axios parsing the workbook as
+// text and corrupting it. The shared client supplies the admin bearer token.
+export const exportLowStockInventory = () =>
+  api.get("/admin/inventory/low-stock/export", {
+    responseType: "blob",
+    headers: {
+      Accept:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    },
+  });
+
 export const fetchInventoryDetail = (id) => api.get(`/admin/inventory/${id}`);
 
 export const updateInventoryStock = (id, stockQuantity) =>

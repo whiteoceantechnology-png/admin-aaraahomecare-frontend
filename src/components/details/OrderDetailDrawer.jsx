@@ -118,6 +118,28 @@ const OrderDetailDrawer = ({
   const action = order ? getOrderNextAction(order) : null;
   const isCancelled = (order?.status || "").toLowerCase() === "cancelled";
 
+  // The refund the API actually recorded, read across the shapes it may use.
+  // `lastRefund` is what requestRefund's own response is stored as
+  // ({refundId, orderId, amount, status}); the others are read in case the
+  // order payload itself carries one.
+  const refundRecord =
+    order?.lastRefund ?? order?.refund ?? order?.refundDetails ?? null;
+  const refundStatus = (
+    refundRecord?.status ??
+    order?.refundStatus ??
+    ""
+  )
+    .toString()
+    .trim();
+  // A refund EXISTS once the API has returned one for this order. Note this
+  // is not the same as "refunded": a refund can exist and still be pending
+  // or failed, which is exactly why the status is displayed rather than
+  // collapsed into a boolean.
+  const hasRefund = !!(refundRecord?.refundId || refundRecord?.id || refundStatus);
+  // A failed refund must be retryable; a pending or processed one must not
+  // be repeated.
+  const refundFailed = /fail|error|declin/i.test(refundStatus);
+
   // Contact info is already part of the fully-loaded order (GET
   // /admin/orders/{id}), so this is a real, working action — not a stub —
   // it just copies what's already on screen rather than calling any API.
@@ -137,14 +159,24 @@ const OrderDetailDrawer = ({
   };
 
   const menuItems = order && [
-    { key: "edit", label: "Edit Order", icon: Pencil, onClick: () => onTrack?.(order) },
+    {
+      key: "edit",
+      label: "Edit Order",
+      icon: Pencil,
+      // Editing is how status and tracking are changed, so it is the route
+      // back into fulfilment for an order that has been cancelled.
+      disabled: isCancelled,
+      onClick: () => onTrack?.(order),
+    },
     { key: "invoice", label: "Print Invoice", icon: Printer, onClick: () => onPrintInvoice?.() },
     { key: "packing", label: "Print Packing Slip", icon: PackageCheck, onClick: () => onPrintPackingSlip?.() },
     {
       key: "markPaid",
       label: "Mark Payment as Paid",
       icon: CreditCard,
-      disabled: isPaid,
+      // Never on a cancelled order: marking a cancelled order paid would
+      // record money against an order that is not being fulfilled.
+      disabled: isPaid || isCancelled,
       onClick: () => onMarkPaid?.(order),
     },
     {
@@ -155,7 +187,24 @@ const OrderDetailDrawer = ({
       disabled: isCancelled,
       onClick: () => onCancel?.(order),
     },
-    { key: "refund", label: "Refund", icon: Undo2, onClick: () => onRefund?.(order) },
+    {
+      key: "refund",
+      // The label states why the row is unavailable, since a disabled row
+      // with no explanation reads as a bug.
+      label: !isCancelled
+        ? "Refund (cancel the order first)"
+        : hasRefund && !refundFailed
+          ? `Refund ${refundStatus || "already requested"}`
+          : refundFailed
+            ? "Retry refund"
+            : "Refund",
+      icon: Undo2,
+      // Refunds run THROUGH cancellation: no standalone refund before the
+      // order is cancelled, and no second refund for the same payment unless
+      // the first one failed.
+      disabled: !isCancelled || (hasRefund && !refundFailed),
+      onClick: () => onRefund?.(order),
+    },
     // Clipboard-copy quick action (existing, unchanged) — separate from
     // "Message Customer" below, which actually sends via
     // POST /admin/orders/{id}/contact.

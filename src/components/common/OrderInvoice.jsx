@@ -31,8 +31,10 @@ const inWords = (n) => `Indian Rupee ${amountInWordsINR(n)}`;
 // "17 Sept 2026" — the reference's date format. en-GB is what produces the
 // four-letter "Sept" (en-US gives "Sep"), so the locale is doing real work
 // here and must not be dropped.
+// day: "numeric", not "2-digit" — the reference reads "9 Sept 2026", not
+// "09 Sept 2026".
 const DATE_FMT = new Intl.DateTimeFormat("en-GB", {
-  day: "2-digit",
+  day: "numeric",
   month: "short",
   year: "numeric",
 });
@@ -45,6 +47,23 @@ const fmtDate = (v) => {
   if (!v) return DASH;
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? DASH : DATE_FMT.format(d);
+};
+
+// Split an intra-state tax amount into its CGST and SGST halves so that the
+// two ALWAYS add back to it exactly, with any odd paisa going to CGST:
+//
+//   2.29 -> CGST 1.15 + SGST 1.14   (plain halving printed 1.14 + 1.14 = 2.28
+//                                    against a Total Tax Amount of 2.29)
+//   2.28 -> CGST 1.14 + SGST 1.14
+//
+// Worked in whole paise rather than on the rupee float, because
+// Math.round(1.145 * 100) is 114, not 115 — 1.145 has no exact binary
+// representation and lands a hair below the midpoint, which would silently
+// give the odd paisa to SGST instead.
+const splitCgstSgst = (total) => {
+  const paise = Math.round(Number(total || 0) * 100);
+  const cgstPaise = Math.round(paise / 2);
+  return { cgst: cgstPaise / 100, sgst: (paise - cgstPaise) / 100 };
 };
 
 // Slab percentages print without trailing zeros, the way the reference
@@ -191,25 +210,187 @@ const OrderInvoice = ({ order, id, variants }) => {
     };
   });
 
-  // Falls back to the order's own tax figure when no line carried a slab, so
-  // the summary never silently reports zero tax on a taxed order.
-  const displayedTaxTotal =
+  // Tax contained in the goods lines.
+  const goodsTax =
     rows.length > 0 ? rows.reduce((sum, r) => sum + r.gst, 0) : taxAmount;
+
+  // ---- SHIPPING IS TAXED, AND ITS TAX IS PART OF THE SAME CGST/SGST ------
+  //
+  // The rate is never invented. It is taken from the order when the API
+  // carries one, and otherwise from the slab the order's OWN items are on —
+  // shipping of a taxable supply follows that supply's rate. A mixed basket
+  // takes the highest slab in use (the principal supply). With no taxable
+  // line at all the rate is 0 and shipping stays untaxed.
+  // The rate is always the COMBINED one (18%, not the 9% CGST half) — that
+  // is what the label states and what the extraction below needs. A payload
+  // that happens to carry only a half-rate is the one case this cannot
+  // detect; see the implementation note in the report.
+  const shippingTaxPercent = (() => {
+    // 1. A rate the API states outright.
+    const declared =
+      order.shippingTaxPercent ??
+      order.shippingGstPercent ??
+      order.shippingTaxRate;
+    if (declared != null && declared !== "" && !Number.isNaN(Number(declared))) {
+      return Number(declared);
+    }
+
+    // 2. A shipping tax AMOUNT the API states, turned back into its rate.
+    //    `shipping` is GST-inclusive, so the rate is measured against the
+    //    ex-GST remainder: 18.31 of tax inside 120 is 18.31/101.69 = 18%.
+    const declaredTax = Number(
+      order.shippingTaxAmount ?? order.shippingTax ?? order.shippingGst ?? NaN,
+    );
+    if (!Number.isNaN(declaredTax) && declaredTax > 0 && shipping > declaredTax) {
+      const derived = (declaredTax / (shipping - declaredTax)) * 100;
+      // The stored tax amount is itself rounded to paise, so the rate backed
+      // out of it lands just off: ₹18.31 inside ₹120 computes as 18.006%,
+      // which would print "18.01% GST". Snap to the nearest quarter-percent
+      // when the gap is that small — GST rates are expressed in quarters
+      // (0.25, 2.5, 5, 12, 18) — and otherwise keep the computed figure
+      // rather than forcing it onto a rate it is not.
+      const quarter = Math.round(derived * 4) / 4;
+      return Math.abs(derived - quarter) <= 0.05
+        ? quarter
+        : Number(derived.toFixed(2));
+    }
+
+    // 3. Otherwise the slab the order's OWN items are on — shipping of a
+    //    taxable supply follows that supply's rate. A mixed basket takes the
+    //    highest slab in use (the principal supply). Note r.percent already
+    //    falls back to the order-level blended rate for a line that carries
+    //    no slab of its own, so this still finds a rate when only
+    //    order.taxAmount is populated.
+    const itemSlabs = rows.map((r) => Number(r.percent)).filter((p) => p > 0);
+    if (itemSlabs.length > 0) return Math.max(...itemSlabs);
+
+    // 4. Nothing to go on. Shipping prints with NO percentage rather than a
+    //    guessed one, and stays untaxed.
+    return 0;
+  })();
+
+  // IS `shippingAmount` STORED INCLUSIVE OR EXCLUSIVE OF ITS GST?
+  //
+  // Nothing in the payload says, and guessing wrong moves real money: at 5%
+  // on ₹40, inclusive means a ₹38.10 base plus ₹1.90 tax, exclusive means a
+  // ₹40.00 base plus ₹2.00 tax and a ₹42.00 charge. So this is DECIDED FROM
+  // THE ORDER'S OWN TOTALS rather than assumed — whichever reading lands
+  // closer to the total the backend actually charged is the one the backend
+  // used:
+  //
+  //   inclusive  -> payable = goods(incl) + shipping            - discount
+  //   exclusive  -> payable = goods(incl) + shipping + its tax  - discount
+  //
+  // With no usable order total to test against, it falls back to inclusive —
+  // the convention every line price in this system already uses (see
+  // orderTotals.js). Either way the tax is applied exactly once.
+  const shippingIsInclusive = (() => {
+    if (!(shipping > 0) || !(shippingTaxPercent > 0)) return true;
+    const payable = Number(order.totalAmount);
+    if (!(payable > 0)) return true;
+    const exclusiveTax = (shipping * shippingTaxPercent) / 100;
+    const asInclusive = subtotal + shipping - discount;
+    const asExclusive = subtotal + shipping + exclusiveTax - discount;
+    return (
+      Math.abs(payable - asInclusive) <= Math.abs(payable - asExclusive)
+    );
+  })();
+
+  // Inclusive: the tax is EXTRACTED from the amount charged (₹40 at 5% is
+  // ₹38.10 + ₹1.90). Exclusive: the amount IS the base and the tax sits on
+  // top. Either way the three figures are derived separately and used for
+  // different purposes below — base for the taxable value, tax for the GST
+  // summary, and the GROSS for the payable column's Shipping row.
+  const shippingTax =
+    shipping > 0 && shippingTaxPercent > 0
+      ? shippingIsInclusive
+        ? (shipping * shippingTaxPercent) / (100 + shippingTaxPercent)
+        : (shipping * shippingTaxPercent) / 100
+      : 0;
+  const shippingExGst = shippingIsInclusive ? shipping - shippingTax : shipping;
+
+  // Everything the invoice reports as tax: goods + shipping.
+  const displayedTaxTotal = goodsTax + shippingTax;
+
+  // Tax grouped by slab, so a mixed 5%/18% basket prints one entry per rate.
+  // A 0% slab produces no entry — a zero-rated order shows no tax line.
+  // Shipping's tax joins the bucket for its own rate, so it is reported
+  // under the same CGST/SGST (or IGST) heads as the goods and is counted
+  // exactly once.
+  const gstByPercent = new Map();
+  rows.forEach((r) => {
+    if (!(Number(r.percent) > 0)) return;
+    gstByPercent.set(r.percent, (gstByPercent.get(r.percent) || 0) + r.gst);
+  });
+  // Shipping's tax joins the bucket for its OWN rate, so it is reported under
+  // the same heads as the goods — CGST 9% + SGST 9% intra-state, the whole
+  // 18% to IGST inter-state — and feeds both the GST summary table and the
+  // payable column from one place. The Shipping row prints the ex-GST base,
+  // so this is counted exactly once.
+  if (shippingTax > 0) {
+    gstByPercent.set(
+      shippingTaxPercent,
+      (gstByPercent.get(shippingTaxPercent) || 0) + shippingTax,
+    );
+  }
+
+  // Per-slab CGST/SGST splits, each one exact (see splitCgstSgst). The
+  // summary buckets are the SUM of these, not a second independent halving,
+  // so the "CGST Amount" cell always equals the CGST rows printed in the
+  // totals column beneath it.
+  const slabSplits = [...gstByPercent.entries()]
+    // Highest slab first, the order the reference invoices list them in.
+    .sort((a, b) => b[0] - a[0])
+    .map(([percent, amount]) => ({ percent, amount, ...splitCgstSgst(amount) }));
+
 
   // The three summary buckets. At most one is non-zero for any given order,
   // because the place of supply decides the whole invoice.
-  const cgstTotal = isIntraState ? displayedTaxTotal / 2 : 0;
-  const sgstTotal = isIntraState ? displayedTaxTotal / 2 : 0;
+  //
+  // The intra-state split sends the odd paisa to CGST. Halving plainly made
+  // ₹2.29 print as CGST 1.14 + SGST 1.14 = 2.28 against a Total Tax Amount
+  // of 2.29 — a tax document that did not add up.
+  const intraSplit = isIntraState
+    ? slabSplits.length > 0
+      ? slabSplits.reduce(
+          (acc, s) => ({ cgst: acc.cgst + s.cgst, sgst: acc.sgst + s.sgst }),
+          { cgst: 0, sgst: 0 },
+        )
+      : // No per-line slabs (an order with no items but a recorded tax):
+        // split the order-level figure directly, by the same rule.
+        splitCgstSgst(displayedTaxTotal)
+    : { cgst: 0, sgst: 0 };
+
+  const cgstTotal = intraSplit.cgst;
+  const sgstTotal = intraSplit.sgst;
   const igstTotal = isInterState ? displayedTaxTotal : 0;
   const totalTax = cgstTotal + sgstTotal + igstTotal;
 
   // Line prices are stored GST-INCLUSIVE, so `subtotal` already contains the
   // tax; the Sub Total row must show it with the tax taken back OUT or the
-  // column counts the GST twice.
-  const subtotalExGst = exGstSubtotal(subtotal, displayedTaxTotal);
-  // Taxable Value is the whole taxable base of the supply — goods ex-GST plus
-  // shipping. On the reference: 0.10 + 1.00 = 1.10.
-  const taxableValue = subtotalExGst + shipping;
+  // column counts the GST twice. Only the GOODS tax is removed here —
+  // shipping is a separate line with its own extraction above.
+  const subtotalExGst = exGstSubtotal(subtotal, goodsTax);
+  // Taxable Value is the whole taxable base of the supply: goods ex-GST plus
+  // shipping EX-GST. Adding the gross shipping instead would count shipping's
+  // own tax inside the taxable base it is charged on.
+  const taxableValue = subtotalExGst + shippingExGst;
+
+  // What the column adds up to, built from exactly the figures it prints:
+  // goods ex-GST + shipping ex-GST + every CGST/SGST/IGST row - discount.
+  // totalTax already contains shipping's GST, and the Shipping row prints
+  // the base, so the shipping tax is added exactly once.
+  const computedTotal = subtotalExGst + shippingExGst + totalTax - discount;
+  // The invoice must show the amount actually charged, and the breakdown must
+  // visibly reconcile to it. The residue — paise lost to per-line rounding,
+  // or a deliberate round-to-rupee at checkout — is shown as Round Off rather
+  // than silently absorbed into another row. Below a tenth of a paisa it is
+  // float noise, not a real adjustment, and no row is printed.
+  const roundOff = Number(order.totalAmount || 0) - computedTotal;
+  // Half a paisa, not a tenth: anything smaller PRINTS as 0.00, and a row
+  // reading "Round Off -₹0.00" is noise rather than an adjustment. The
+  // residue it suppresses is below the invoice's own display resolution.
+  const showRoundOff = Math.abs(roundOff) >= 0.005;
 
   const customerPhone = order.customer?.phone || address?.phone || "";
   // The customer's own GSTIN, from the order detail response already loaded by
@@ -228,11 +409,9 @@ const OrderInvoice = ({ order, id, variants }) => {
     .trim();
 
   // "Erode - 638104, CONT: 7397036307" — the reference folds city, postcode
-  // and one contact field onto a single line. `contact` is what varies
-  // between the two panels: BILL TO shows the GSTIN when the customer has
-  // one, SHIP TO always shows the phone (a shipping label needs a number to
-  // call, not a tax id).
-  const buildAddressLines = (contact) =>
+  // and the contact number onto a single line. `extraLines` is what varies
+  // between the two panels.
+  const buildAddressLines = (extraLines = []) =>
     address
       ? [
           [address.addressLine1, address.addressLine2]
@@ -240,34 +419,106 @@ const OrderInvoice = ({ order, id, variants }) => {
             .join(", "),
           [
             [address.city, address.postalCode].filter(Boolean).join(" - "),
-            contact,
+            customerPhone ? `CONT: ${customerPhone}` : "",
           ]
             .filter(Boolean)
             .join(", "),
+          ...extraLines,
           address.state,
         ].filter(Boolean)
       : [];
 
-  const phoneLine = customerPhone ? `CONT: ${customerPhone}` : "";
-  // GSTIN REPLACES the phone here — it is not shown alongside it.
+  // The GSTIN sits on its own line directly BELOW the contact number, and
+  // only when the customer actually has one — the phone is still shown
+  // either way, so nothing is lost when a GSTIN is present. An absent,
+  // null or whitespace-only value adds no line at all, so a bare "GSTIN:"
+  // label can never print.
   const billToLines = buildAddressLines(
-    customerGstin ? `GSTIN: ${customerGstin}` : phoneLine,
+    customerGstin ? [`GSTIN: ${customerGstin}`] : [],
   );
-  const shipToLines = buildAddressLines(phoneLine);
+  // SHIP TO is deliberately untouched: address + phone, no GSTIN. A tax id
+  // belongs on the bill, not on a shipping label.
+  const shipToLines = buildAddressLines();
 
   // Bill To and Ship To both describe this order's single address — the same
   // honest reuse this file has always documented.
   const customerName = order.customer?.name || address?.name || DASH;
 
+  // The BANK DETAILS lines, built only from fields seller.js actually fills.
+  // Branch and IFSC share one line when both exist, as on the reference.
+  const bank = SELLER.bank || {};
+  const branchAndIfsc = [bank.branch, bank.ifsc].filter(Boolean).join(" & ");
+  const bankLines = [
+    bank.name ? `Bank Name - ${bank.name}` : "",
+    bank.accountNumber ? `Account Number - ${bank.accountNumber}` : "",
+    branchAndIfsc ? `Branch & IFSC - ${branchAndIfsc}` : "",
+  ].filter(Boolean);
+
   const TH = "border border-gray-400 px-1.5 py-1 font-bold";
   const TD = "border border-gray-400 px-1.5 py-1.5 align-top";
 
-  // One tax cell. The reference prints "—" wherever a component does not
-  // apply: a zero-rated line, or CGST/SGST on an inter-state supply.
+  // One tax cell. "—" wherever a component does not apply — a zero-rated
+  // line, most commonly.
   const taxCell = (applies, value, isPercent) => {
     if (!applies || !value) return DASH;
     return isPercent ? `${fmtPercent(value)}%` : fmtNum(value);
   };
+
+  // The tax column groups in the items table FOLLOW THE PLACE OF SUPPLY, the
+  // same fact that decides the tax itself: an inter-state supply is charged
+  // IGST and gets one IGST group, an intra-state supply is charged CGST+SGST
+  // and gets two. Printing CGST/SGST columns full of dashes on a Karnataka
+  // order (the previous fixed layout) stated the wrong tax heads and hid the
+  // rate actually charged — the IGST figure only appeared in the summary
+  // below. An order with no place of supply keeps CGST/SGST, since there is
+  // nothing to justify calling the tax IGST.
+  const taxColumns = isInterState
+    ? [{ key: "igst", label: "IGST" }]
+    : [
+        { key: "cgst", label: "CGST" },
+        { key: "sgst", label: "SGST" },
+      ];
+  // 4 fixed columns + 2 subcolumns per group + Amount.
+  const itemColumnCount = 4 + taxColumns.length * 2 + 1;
+
+  // Per-line cells for those groups, in the same order the headers are built.
+  // The intra-state line uses the same odd-paisa-to-CGST split as the summary,
+  // so a line's two halves add back to the line's own tax exactly.
+  const taxCellsFor = (percent, gst) => {
+    if (isInterState) {
+      return [taxCell(true, percent, true), taxCell(true, gst, false)];
+    }
+    const { cgst, sgst } = splitCgstSgst(gst);
+    return [
+      taxCell(isIntraState, percent / 2, true),
+      taxCell(isIntraState, cgst, false),
+      taxCell(isIntraState, percent / 2, true),
+      taxCell(isIntraState, sgst, false),
+    ];
+  };
+
+  // One totals row per slab actually used, labelled the way the reference
+  // does ("IGST18 (18%)", "CGST9 (9%)"). Built from slabSplits above — the
+  // SAME numbers the summary buckets are summed from — so the rows and the
+  // summary can never disagree by a paisa.
+  const taxRows = slabSplits.flatMap((s) =>
+    isIntraState
+      ? [
+          {
+            label: `CGST${fmtPercent(s.percent / 2)}`,
+            percent: s.percent / 2,
+            amount: s.cgst,
+          },
+          {
+            label: `SGST${fmtPercent(s.percent / 2)}`,
+            percent: s.percent / 2,
+            amount: s.sgst,
+          },
+        ]
+      : isInterState
+        ? [{ label: `IGST${fmtPercent(s.percent)}`, percent: s.percent, amount: s.amount }]
+        : [],
+  );
 
   return (
     <div id={id} className="invoice-page bg-white text-gray-900">
@@ -341,8 +592,9 @@ const OrderInvoice = ({ order, id, variants }) => {
             />
           </div>
 
-          {/* ITEMS — fixed columns: # / Item & Description / Qty / Rate /
-              CGST(%,Amt) / SGST(%,Amt) / Amount, exactly as the reference. */}
+          {/* ITEMS — # / Item & Description / Qty / Rate / <tax groups> /
+              Amount. The tax groups are IGST(%,Amt) for an inter-state
+              supply and CGST(%,Amt) + SGST(%,Amt) for an intra-state one. */}
           <table className="invoice-items-table mt-3 w-full text-[10px] border-collapse">
             <thead>
               <tr className="text-gray-900">
@@ -358,28 +610,35 @@ const OrderInvoice = ({ order, id, variants }) => {
                 <th rowSpan={2} className={`${TH} w-[58px] text-right`}>
                   Rate
                 </th>
-                <th colSpan={2} className={`${TH} w-[96px] text-center`}>
-                  CGST
-                </th>
-                <th colSpan={2} className={`${TH} w-[96px] text-center`}>
-                  SGST
-                </th>
+                {taxColumns.map((c) => (
+                  <th
+                    key={c.key}
+                    colSpan={2}
+                    className={`${TH} w-[96px] text-center`}
+                  >
+                    {c.label}
+                  </th>
+                ))}
                 <th rowSpan={2} className={`${TH} w-[76px] text-right`}>
                   Amount
                 </th>
               </tr>
               <tr className="text-gray-900">
-                <th className={`${TH} w-[38px] text-center`}>%</th>
-                <th className={`${TH} w-[58px] text-center`}>Amt</th>
-                <th className={`${TH} w-[38px] text-center`}>%</th>
-                <th className={`${TH} w-[58px] text-center`}>Amt</th>
+                {taxColumns.flatMap((c) => [
+                  <th key={`${c.key}-p`} className={`${TH} w-[38px] text-center`}>
+                    %
+                  </th>,
+                  <th key={`${c.key}-a`} className={`${TH} w-[58px] text-center`}>
+                    Amt
+                  </th>,
+                ])}
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={itemColumnCount}
                     className={`${TD} py-6 text-center text-gray-400`}
                   >
                     No items on this order
@@ -387,10 +646,6 @@ const OrderInvoice = ({ order, id, variants }) => {
                 </tr>
               ) : (
                 rows.map(({ it, key, lineAmount, percent, gst, hsn }, i) => {
-                  // Intra-state splits the line tax evenly between the two
-                  // halves of the same slab.
-                  const halfGst = gst / 2;
-                  const halfPercent = percent / 2;
                   const variantName = variantNameFor(it, variants);
                   return (
                     <tr key={key} className="invoice-row">
@@ -415,18 +670,15 @@ const OrderInvoice = ({ order, id, variants }) => {
                       <td className={`${TD} text-right tabular-nums`}>
                         {fmtNum(it.price)}
                       </td>
-                      <td className={`${TD} text-center tabular-nums`}>
-                        {taxCell(isIntraState, halfPercent, true)}
-                      </td>
-                      <td className={`${TD} text-center tabular-nums`}>
-                        {taxCell(isIntraState, halfGst, false)}
-                      </td>
-                      <td className={`${TD} text-center tabular-nums`}>
-                        {taxCell(isIntraState, halfPercent, true)}
-                      </td>
-                      <td className={`${TD} text-center tabular-nums`}>
-                        {taxCell(isIntraState, halfGst, false)}
-                      </td>
+                      {/* One %/Amt pair per tax group — IGST, or CGST+SGST. */}
+                      {taxCellsFor(percent, gst).map((cell, ci) => (
+                        <td
+                          key={ci}
+                          className={`${TD} text-center tabular-nums`}
+                        >
+                          {cell}
+                        </td>
+                      ))}
                       <td className={`${TD} text-right tabular-nums font-bold`}>
                         {fmtNum(lineAmount)}
                       </td>
@@ -485,6 +737,25 @@ const OrderInvoice = ({ order, id, variants }) => {
               <p className="!m-0 pt-0.5 text-[10.5px] italic text-gray-800">
                 {inWords(order.totalAmount)}
               </p>
+
+              {/* BANK DETAILS — rendered only when seller.js actually
+                  configures them, and each line only when it has a value, so
+                  an unconfigured deployment prints no empty heading. */}
+              {bankLines.length > 0 && (
+                <>
+                  <p className="!m-0 pt-3 text-[10.5px] font-bold uppercase tracking-[0.04em] text-gray-900">
+                    Bank Details
+                  </p>
+                  {bankLines.map((line) => (
+                    <p
+                      key={line}
+                      className="!m-0 text-[10.5px] leading-[1.55] text-gray-800"
+                    >
+                      {line}
+                    </p>
+                  ))}
+                </>
+              )}
             </div>
 
             <div className="text-[10.5px]">
@@ -503,11 +774,46 @@ const OrderInvoice = ({ order, id, variants }) => {
                 </div>
               )}
               <div className="flex items-center justify-between py-[3px]">
-                <span className="text-gray-900">Shipping</span>
+                <span className="text-gray-900">
+                  Shipping
+                  {shippingTaxPercent > 0 && shipping > 0
+                    ? ` (${fmtPercent(shippingTaxPercent)}% GST)`
+                    : ""}
+                </span>
+                {/* EX-GST, like the Sub Total above it: ₹80 charged at 18%
+                    prints as ₹67.80 here, and its ₹12.20 of GST appears in
+                    the CGST/SGST (or IGST) rows below. Printing the gross
+                    figure here as well would bill that tax twice. */}
                 <span className="tabular-nums text-gray-900">
-                  {fmtRs(shipping)}
+                  {fmtRs(shippingExGst)}
                 </span>
               </div>
+              {/* One row per slab the order actually uses — "IGST18 (18%)",
+                  or "CGST9 (9%)" + "SGST9 (9%)". Without these the column
+                  jumped from Shipping straight to Total and the tax the
+                  customer paid appeared nowhere in the payable breakdown. */}
+              {taxRows.map((row) => (
+                <div
+                  key={row.label}
+                  className="flex items-center justify-between py-[3px]"
+                >
+                  <span className="text-gray-900">
+                    {row.label} ({fmtPercent(row.percent)}%)
+                  </span>
+                  <span className="tabular-nums text-gray-900">
+                    {fmtRs(row.amount)}
+                  </span>
+                </div>
+              ))}
+              {showRoundOff && (
+                <div className="flex items-center justify-between py-[3px]">
+                  <span className="text-gray-900">Round Off</span>
+                  <span className="tabular-nums text-gray-900">
+                    {roundOff < 0 ? "-" : ""}
+                    {fmtRs(Math.abs(roundOff))}
+                  </span>
+                </div>
+              )}
               <div className="mt-1.5 flex items-center justify-between border-t border-gray-400 pt-2">
                 <span className="text-[13px] font-bold text-gray-900">
                   Total

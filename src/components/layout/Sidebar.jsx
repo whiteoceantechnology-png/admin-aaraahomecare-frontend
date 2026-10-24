@@ -12,6 +12,7 @@ import {
   Bell,
   CreditCard,
   Truck,
+  FileSpreadsheet,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -39,6 +40,7 @@ const NAV_GROUPS = [
       { path: "/customer", icon: Users, text: "Customers" },
       { path: "/payment", icon: CreditCard, text: "Payments" },
       { path: "/logistics", icon: Truck, text: "Logistics" },
+      { path: "/sales-export", icon: FileSpreadsheet, text: "Sales Export" },
     ],
   },
   {

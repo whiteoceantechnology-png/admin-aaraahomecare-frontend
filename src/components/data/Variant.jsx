@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { Info } from "lucide-react";
+import { Info, Download } from "lucide-react";
+import { toast } from "react-hot-toast";
 import {
   getInventoryList,
   getLowStockInventory,
 } from "../../redux/slices/inventorySlice";
+import { exportLowStockInventory } from "../../redux/slices/inventoryApi";
 import { getAllCategoryList } from "../../redux/slices/categorySlice";
 
 import VariantTable from "../table/VariantTable";
@@ -36,6 +38,41 @@ const Variant = ({ title = "Inventory" }) => {
   const categoriesInitializedRef = useRef(false);
   const [statusFilter, setStatusFilter] = useState("all");
   const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  // GET /admin/inventory/low-stock/export through the shared authenticated
+  // client. The response is a binary workbook, so it is handled as a Blob and
+  // the temporary object URL is revoked once the click has been dispatched —
+  // leaving it alive keeps the whole file in memory.
+  const handleExportLowStock = async () => {
+    if (exporting) return;
+    setExporting(true);
+    let url;
+    try {
+      const res = await exportLowStockInventory();
+      const blob =
+        res.data instanceof Blob
+          ? res.data
+          : new Blob([res.data], {
+              type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            });
+      url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "low-stock-export.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      toast.success("Low stock export downloaded");
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.message || "Failed to export low stock inventory",
+      );
+    } finally {
+      if (url) URL.revokeObjectURL(url);
+      setExporting(false);
+    }
+  };
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
 
@@ -98,7 +135,9 @@ const Variant = ({ title = "Inventory" }) => {
     if (lowStockOnly) {
       inFlightListRef.current = dispatch(
         getLowStockInventory({
-          threshold: LOW_STOCK_THRESHOLD,
+          // No `threshold`: the backend applies its own rules (below 1000 g,
+          // below 1000 ml, below 25 units). Sending one here duplicated that
+          // logic and silently overrode it.
           page: currentPage,
           limit: itemsPerPage,
           ...(categoryId ? { categoryId } : {}),
@@ -117,7 +156,6 @@ const Variant = ({ title = "Inventory" }) => {
     if (!lowStockOnly) {
       dispatch(
         getLowStockInventory({
-          threshold: LOW_STOCK_THRESHOLD,
           page: 1,
           limit: 1,
           ...(categoryId ? { categoryId } : {}),
@@ -161,9 +199,20 @@ const Variant = ({ title = "Inventory" }) => {
         <h2 className="!text-[26px] !font-bold !leading-[1.2] !m-0 text-[var(--mk-ink-900)] tracking-[-0.01em]">
           {title}
         </h2>
-        <p className="text-[12px] font-medium text-[var(--mk-ink-500)] mt-1 leading-[1.5]">
-          Stock levels by product with expandable variant details.
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-[12px] font-medium text-[var(--mk-ink-500)] mt-1 leading-[1.5]">
+            Stock levels by product with expandable variant details.
+          </p>
+          <button
+            type="button"
+            onClick={handleExportLowStock}
+            disabled={exporting}
+            className="inline-flex items-center h-[30px] gap-1.5 px-3 rounded-[6px] text-[12.5px] font-medium text-[var(--mk-ink-700)] border border-[var(--mk-line)] bg-white hover:border-[#C9CFDA] hover:text-[var(--mk-ink-900)] transition-colors cursor-pointer shrink-0 disabled:opacity-45 disabled:cursor-not-allowed"
+          >
+            <Download size={15} />
+            {exporting ? "Exporting…" : "Export to Excel"}
+          </button>
+        </div>
       </div>
 
       {/* INFO BANNER */}

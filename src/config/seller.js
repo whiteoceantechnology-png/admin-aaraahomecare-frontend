@@ -26,6 +26,17 @@ export const SELLER = {
   email: "aaraahomecare@gmail.com",
   website: "",
   gstin: "33ACJFA3570G1ZL",
+
+  // Printed as the invoice's BANK DETAILS block. Every field is optional and
+  // the block is HIDDEN entirely when `bank` is absent or has no filled
+  // fields — same rule the rest of this file follows, so a deployment that
+  // does not want bank details on its invoices simply clears this.
+  bank: {
+    name: "Canara Bank",
+    accountNumber: "120034382423",
+    branch: "Elampillai Branch",
+    ifsc: "CNRB0001048",
+  },
 };
 
 export default SELLER;
