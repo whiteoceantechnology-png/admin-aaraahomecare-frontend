@@ -3,7 +3,6 @@ import {
   Lock,
   User,
   ArrowRight,
-  Scissors,
   Eye,
   EyeOff,
 } from "lucide-react";
@@ -12,6 +11,7 @@ import { toast } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import { loginUser } from "../../redux/slices/authSlice";
+import logo from "../../assets/images/logo.jpeg";
 
 const AuthPages = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -52,10 +52,14 @@ const AuthPages = () => {
       <div className="bg-white shadow-xl rounded-lg w-full max-w-md border border-gray-200 overflow-hidden">
 
         {/* HEADER */}
-        <div className="bg-black p-6 text-white text-center">
+        <div className="bg-[oklch(0.38_0.06_169.06)] p-6 text-white text-center">
           <div className="flex justify-center mb-4">
             <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center">
-              <Scissors size={32} className="text-white" />
+              <img
+                src={logo}
+                alt="Aaraa Homecare"
+                className="w-14 h-14 object-contain"
+              />
             </div>
           </div>
           <h1 className="text-2xl font-bold">Aaraa Admin Portal</h1>
@@ -124,7 +128,7 @@ const AuthPages = () => {
           </div>
 
           {/* BUTTON */}
-          <button className="w-full bg-black text-white py-2 rounded-md flex justify-center items-center">
+          <button className="w-full bg-[oklch(0.38_0.06_169.06)] text-white py-2 rounded-md flex justify-center items-center">
             Sign In <ArrowRight size={16} className="ml-2" />
           </button>
 

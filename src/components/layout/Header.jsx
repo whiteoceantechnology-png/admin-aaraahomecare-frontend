@@ -2,7 +2,7 @@ import { Menu, ChevronRight, Bell, ChevronDown, LogOut, User, Mail } from "lucid
 import { useState, useRef, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
-import logo from "./aaraa_logo.png";
+import logo from "../../assets/images/Aaraa_Homecare_Logo.svg";
 import api, { clearAuthAndRedirect } from "../../utils/api";
 
 // Path prefix -> breadcrumb label. Checked longest-prefix-first isn't needed
@@ -112,7 +112,7 @@ const Header = ({ collapsed, toggleSidebar }) => {
         {/* RIGHT — unchanged from the original implementation */}
         <div className="flex items-center gap-2 lg:gap-3 shrink-0">
           {/* Notifications */}
-          <div className="relative" ref={notificationsRef}>
+          {/* <div className="relative" ref={notificationsRef}>
             <button
               type="button"
               onClick={() => setShowNotifications((prev) => !prev)}
@@ -140,7 +140,7 @@ const Header = ({ collapsed, toggleSidebar }) => {
                 </div>
               </div>
             )}
-          </div>
+          </div> */}
 
           <div className="w-px h-6 bg-gray-200 hidden sm:block" />
 
@@ -152,8 +152,8 @@ const Header = ({ collapsed, toggleSidebar }) => {
             <div className="relative">
               <img
                 src={logo}
-                alt="User"
-                className="w-8 h-8 rounded-full ring-2 ring-[var(--brand-gold)] object-cover"
+                alt="Aaraa Homecare"
+                className="w-8 h-8 rounded-full ring-2 ring-[var(--brand-gold)] object-contain bg-white"
               />
               <div className="absolute bottom-0 right-0 w-2 h-2 bg-green-500 rounded-full border-2 border-white" />
             </div>
@@ -181,25 +181,25 @@ const Header = ({ collapsed, toggleSidebar }) => {
                 ref={modalRef}
                 className="absolute right-0 top-16 w-64 bg-white rounded-2xl shadow-lg border border-gray-200/80 z-10 overflow-hidden animate-fade-in-up"
               >
-                <div className="p-4 border-b border-gray-100 bg-gray-50/60">
+                {/* <div className="p-4 border-b border-gray-100 bg-gray-50/60"> */}
                   <div className="flex items-center">
-                    <img
+                    {/* <img
                       src={logo}
-                      alt="User"
-                      className="w-12 h-12 rounded-full ring-2 ring-[var(--brand-gold)] object-cover"
-                    />
-                    <div className="ml-3 min-w-0">
+                      alt="Aaraa Homecare"
+                      className="w-12 h-12 rounded-full ring-2 ring-[var(--brand-gold)] object-contain bg-white"
+                    /> */}
+                    {/* <div className="ml-3 min-w-0">
                       <p className="text-[13.5px] font-semibold text-gray-800 capitalize truncate">
                         {profile?.username}
                       </p>
                       <p className="text-[11.5px] text-gray-500 truncate mt-0.5">
                         {profile?.email}
                       </p>
-                    </div>
+                    </div> */}
                   </div>
-                </div>
+                {/* </div> */}
 
-                <div className="p-2 space-y-0.5">
+                {/* <div className="p-2 space-y-0.5">
                   <div className="flex items-center px-2.5 py-2 rounded-lg text-gray-600">
                     <User size={16} className="mr-3 text-[var(--brand-purple)] shrink-0" />
                     <p className="text-[13px] capitalize truncate">
@@ -211,7 +211,7 @@ const Header = ({ collapsed, toggleSidebar }) => {
                     <Mail size={16} className="mr-3 text-[var(--brand-purple)] shrink-0" />
                     <p className="text-[13px] truncate">{profile?.email}</p>
                   </div>
-                </div>
+                </div> */}
 
                 <div className="p-2 border-t border-gray-100">
                   <button

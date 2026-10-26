@@ -15,7 +15,7 @@
 //
 // Printing/pagination is unchanged: InvoiceModal portals this onto <body>
 // and index.css turns each .invoice-sheet into one physical A4 page.
-import logo from "../layout/aaraa_logo.png";
+import logo from "../../assets/images/Aaraa_Homecare_Logo.svg";
 import { SELLER } from "../../config/seller";
 import { exGstSubtotal, gstPercentFor } from "../../utils/orderTotals";
 import { amountInWordsINR } from "../../utils/numberToWords";
@@ -531,7 +531,7 @@ const OrderInvoice = ({ order, id, variants }) => {
             <div className="flex items-start gap-3 min-w-0">
               <img
                 src={logo}
-                alt=""
+                alt="Aaraa Homecare"
                 className="h-12 w-auto object-contain shrink-0"
               />
               <div className="min-w-0 text-[10.5px] font-bold leading-[1.5] text-gray-900">

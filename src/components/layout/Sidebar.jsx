@@ -15,6 +15,7 @@ import {
   FileSpreadsheet,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
+import logo from "../../assets/images/logo.jpeg";
 
 // Grouped nav matching the locked design spec — every entry below routes to a
 // real, working page. Items with no backing page/API yet (Reports, Shipping,
@@ -69,27 +70,22 @@ const Sidebar = ({ collapsed }) => {
         collapsed ? "w-16" : "w-60"
       }`}
     >
-      {/* Logo / header area — small rounded-square "a" mark + "aaraa
-          Homecare" wordmark + "ADMIN CONSOLE" label, matching the approved
-          reference exactly. No matching icon-only asset exists in the repo
-          (aaraa_logo.png is the full decorative arc wordmark, wrong shape
-          for this spot), so the mark is built from the app's own existing
-          tokens: the gold already used for the active-nav accent bar and
-          the same muted-label styling NAV_GROUPS headings use below. */}
+      {/* Logo / header area */}
       <div
         className={`flex items-center shrink-0 overflow-hidden transition-all duration-300 ease-out gap-2.5 ${
           collapsed ? "justify-center px-2 py-[18px]" : "px-[18px] pt-[18px] pb-[14px]"
         }`}
       >
-        <div className="w-9 h-9 rounded-[10px] bg-[#D3A430] flex items-center justify-center shrink-0">
-          <span className="text-[19px] font-bold text-[#171B2D] leading-none">a</span>
-        </div>
+        <img
+          src={logo}
+          alt="Aaraa Homecare"
+          className="w-9 h-9 object-contain shrink-0"
+        />
         <div
           className={`overflow-hidden transition-all duration-300 ease-out ${
             collapsed ? "max-w-0 opacity-0" : "max-w-[10rem] opacity-100"
           }`}
         >
-          <p className="text-[14.5px] font-bold text-white leading-tight whitespace-nowrap">aaraa Homecare</p>
           <p className="text-[9.5px] font-semibold text-[#6C7390] uppercase tracking-[1.6px] whitespace-nowrap">
             Admin Console
           </p>
