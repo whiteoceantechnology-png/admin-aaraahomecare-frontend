@@ -532,7 +532,7 @@ const OrderInvoice = ({ order, id, variants }) => {
               <img
                 src={logo}
                 alt="Aaraa Homecare"
-                className="h-12 w-auto object-contain shrink-0"
+                className="h-24 w-auto object-contain shrink-0"
               />
               <div className="min-w-0 text-[10.5px] font-bold leading-[1.5] text-gray-900">
                 <p className="!m-0 text-[12px] font-bold">{SELLER.name}</p>

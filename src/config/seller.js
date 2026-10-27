@@ -17,10 +17,8 @@ export const SELLER = {
   name: "AARAA HOMECARE",
 
   addressLines: [
-    "3/325 (OLD NO. 8/280)",
-    "OLD POST OFFICE STREET",
-    "Naduvaneri, Salem",
-    "Tamil Nadu - 637504",
+    "3/325 (OLD NO. 8/280), OLD POST OFFICE STREET",
+    "Naduvaneri, Salem - 637504",
   ],
   phone: "+91 87781 63790",
   email: "aaraahomecare@gmail.com",
